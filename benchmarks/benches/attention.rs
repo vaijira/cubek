@@ -1,4 +1,8 @@
-#![allow(unused, clippy::extra_unused_type_parameters)]
+#![allow(
+    unused,
+    clippy::extra_unused_type_parameters,
+    clippy::single_element_loop
+)]
 
 use cubecl::{
     Runtime,
