@@ -72,8 +72,8 @@ where
     let rhs = tensor_raw_parts::<P, TestRuntime>(&client, &problem, MatmulIdent::Rhs);
     let out = tensor_raw_parts::<P, TestRuntime>(&client, &problem, MatmulIdent::Out);
 
-    problem.lhs_strides = lhs.strides.clone().into();
-    problem.rhs_strides = rhs.strides.clone().into();
+    problem.lhs_strides = lhs.strides.clone();
+    problem.rhs_strides = rhs.strides.clone();
 
     let line_sizes = AvailableLineSizes {
         lhs: vec![1],

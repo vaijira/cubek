@@ -186,8 +186,8 @@ impl<Lhs: Numeric, Rhs: Numeric, EO: Numeric, A: Routine<RuntimeArgs>> ConcreteI
                     .into_array_arg(),
                 layout_rhs,
             ),
-            OptionArgs::None,
-            OptionArgs::None,
+            ComptimeOptionArgs::None,
+            ComptimeOptionArgs::None,
         );
 
         let runtime_args = RuntimeArgsLaunch::new(
@@ -303,8 +303,8 @@ impl<Lhs: Numeric, Rhs: Numeric, EO: Numeric, A: Routine<RuntimeArgs, Blueprint 
         let inputs = TensorMapInputsLaunch::new(
             ViewArg::new_tensor_map_im2col::<LhsLayout, _, _>(lhs, lhs_layout),
             ViewArg::new_tensor_map_tiled::<RhsLayout>(rhs, rhs_layout),
-            OptionArgs::None,
-            OptionArgs::None,
+            ComptimeOptionArgs::None,
+            ComptimeOptionArgs::None,
         );
 
         let runtime_args = RuntimeArgsLaunch::new(

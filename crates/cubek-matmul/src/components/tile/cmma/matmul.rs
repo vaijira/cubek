@@ -114,7 +114,7 @@ where
         CmmaStageReader::<Self::LhsTile>::load_fragment(
             tile,
             &mut lhs.fragment,
-            Option::new_None(),
+            ComptimeOption::new_None(),
         );
     }
 
@@ -126,7 +126,7 @@ where
         CmmaStageReader::<Self::RhsTile>::load_fragment(
             tile,
             &mut rhs.fragment,
-            Option::new_None(),
+            ComptimeOption::new_None(),
         );
     }
 
@@ -138,7 +138,7 @@ where
         CmmaStageReader::<Self::AccTile>::load_fragment(
             tile,
             &mut acc.fragment,
-            Option::new_Some(as_cmma_layout(acc.layout)),
+            ComptimeOption::new_Some(as_cmma_layout(acc.layout)),
         );
     }
 

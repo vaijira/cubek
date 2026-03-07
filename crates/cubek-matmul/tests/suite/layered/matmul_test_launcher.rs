@@ -238,6 +238,7 @@ pub fn launch_matmul_algorithm<A: Routine<(), Blueprint = TilingBlueprint>>(
     });
     match launch {
         Ok((result, errors)) => {
+            #[allow(clippy::never_loop)]
             for error in errors.iter() {
                 match error {
                     // One launch error is OK.
@@ -247,8 +248,8 @@ pub fn launch_matmul_algorithm<A: Routine<(), Blueprint = TilingBlueprint>>(
                     _ => panic!("{errors:?}"),
                 }
             }
-            return result;
+            result
         }
-        Err(err) => return ExecutionOutcome::CompileError(err.to_string()),
+        Err(err) => ExecutionOutcome::CompileError(err.to_string()),
     }
 }
