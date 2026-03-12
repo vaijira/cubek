@@ -1,5 +1,5 @@
 use cubecl::ir::DeviceProperties;
-use cubecl::ir::LineSize;
+use cubecl::ir::VectorSize;
 use cubek_matmul::components::CubeDimResource;
 
 use crate::components::tile::SharedTileAttentionConfig;
@@ -86,7 +86,7 @@ impl TileAttentionFamily for BlackboxAcceleratedTileAttention {
                 },
             },
             blueprint.reuse_key_value,
-            blueprint.line_sizes.mask,
+            blueprint.vector_sizes.mask,
             dtypes,
         )
     }
@@ -96,7 +96,7 @@ fn validate(
     device_props: &DeviceProperties,
     config: BlackboxAcceleratedAttentionMatmulConfig,
     reuse_key_value: bool,
-    line_sizes_mask: LineSize,
+    vector_sizes_mask: VectorSize,
     dtypes: &AttentionElems,
 ) -> Result<BlackboxAcceleratedAttentionMatmulConfig, AttentionSetupError> {
     if dtypes.query_global != dtypes.query_tile {
@@ -138,9 +138,9 @@ fn validate(
         ));
     }
 
-    if line_sizes_mask > 1 {
+    if vector_sizes_mask > 1 {
         return Err(AttentionSetupError::InvalidConfig(Box::new(
-            "Line size mask > 1 not supported yet on accelerated tile attention",
+            "Vector size mask > 1 not supported yet on accelerated tile attention",
         )));
     }
 
@@ -148,7 +148,7 @@ fn validate(
     let softmax_num_cols = config.shared.attention_tile_size.seq_kv;
     let softmax_total = softmax_num_rows * softmax_num_cols;
 
-    if softmax_total % config.shared.plane_dim != 0 {
+    if !softmax_total.is_multiple_of(config.shared.plane_dim) {
         return Err(AttentionSetupError::InvalidConfig(Box::new(
             "Softmax size should be divisible by plane dim",
         )));
@@ -162,7 +162,7 @@ fn validate(
     }
 
     if config.inner_layout == InnerLayout::SplitRows
-        && softmax_total % (2 * config.shared.plane_dim) != 0
+        && !softmax_total.is_multiple_of(2 * config.shared.plane_dim)
     {
         return Err(AttentionSetupError::InvalidConfig(Box::new(
             "With split rows, units must have two elements each",
