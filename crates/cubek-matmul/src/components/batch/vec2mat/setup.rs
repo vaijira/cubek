@@ -5,14 +5,14 @@ use cubecl::{
     quant::scheme::QuantLevel,
     server::LaunchError,
 };
-use cubek_std::MatrixLayout;
+use cubek_std::{MatrixLayout, cube_count::HypercubeBlueprint};
 
 use crate::{
     components::{
         CubeDimResource,
         batch::{
             BatchMatmulFamily,
-            naive::{NaiveMatmul, NaiveMatmulConfig, matmul_entry},
+            vec2mat::{Vec2Mat, Vec2MatMatmulConfig, matmul_entry},
         },
         global::memory::GlobalLayoutConfig,
         stage::NumStages,
@@ -25,14 +25,17 @@ use crate::{
 };
 
 /// Simple partitioned batch matmul family for any precision
-pub struct NaiveBatchMatmulFamily {}
+pub struct Vec2MatFamily {}
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct NaiveBlueprint {
-    pub vector_size_out: u32,
+pub struct Vec2MatBlueprint {
     pub dtypes: MatmulElems,
+    pub num_planes: usize,
+    // Should equal plane_dim * vector_size
+    pub tile_dim: usize,
+    pub hypercube_blueprint: HypercubeBlueprint,
 }
 
-impl Blueprint for NaiveBlueprint {
+impl Blueprint for Vec2MatBlueprint {
     fn lhs_global_layout_config(&self) -> GlobalLayoutConfig {
         GlobalLayoutConfig {
             matrix_layout: MatrixLayout::RowMajor,
@@ -58,26 +61,29 @@ impl Blueprint for NaiveBlueprint {
     }
 
     fn tiling_scheme(&self) -> TilingScheme {
-        panic!("Naive Blueprint doesn't have a TilingScheme")
+        panic!("Vec2Mat Blueprint doesn't have a TilingScheme")
     }
 
     fn swizzle_modes(&self) -> SwizzleModes {
-        panic!("Naive Blueprint doesn't have Swizzle Modes")
+        panic!("Vec2Mat Blueprint doesn't have Swizzle Modes")
     }
 }
 
-impl BatchMatmulFamily<()> for NaiveBatchMatmulFamily {
-    type Matmul<MP: MatmulTypes> = NaiveMatmul<MP>;
-    type Config = NaiveMatmulConfig;
-    type Blueprint = NaiveBlueprint;
+impl BatchMatmulFamily<()> for Vec2MatFamily {
+    type Matmul<MP: MatmulTypes> = Vec2Mat<MP>;
+    type Config = Vec2MatMatmulConfig;
+    type Blueprint = Vec2MatBlueprint;
 
     fn expand_config(
-        _device_props: &DeviceProperties,
-        _blueprint: &Self::Blueprint,
+        device_props: &DeviceProperties,
+        blueprint: &Self::Blueprint,
         _dtypes: &MatmulElems,
         _vector_sizes: &MatmulVectorSizes,
     ) -> Result<Self::Config, MatmulSetupError> {
-        Ok(NaiveMatmulConfig {})
+        Ok(Vec2MatMatmulConfig {
+            plane_dim: device_props.hardware.plane_size_max,
+            num_planes: blueprint.num_planes as u32,
+        })
     }
 
     fn num_stages() -> NumStages {
@@ -93,7 +99,7 @@ impl BatchMatmulFamily<()> for NaiveBatchMatmulFamily {
         output: OutputRuntimeArg<MA, R>,
         _config: ConfigRuntimeArg<MA, R>,
         cube_mapping: CubeMappingLaunch<R>,
-        blueprint: NaiveBlueprint,
+        blueprint: Vec2MatBlueprint,
         dtypes: &MatmulElems,
         vector_sizes: &MatmulVectorSizes,
     ) -> Result<(), LaunchError> {
@@ -117,27 +123,20 @@ impl BatchMatmulFamily<()> for NaiveBatchMatmulFamily {
     }
 
     fn cubedim_resource(
-        _blueprint: &Self::Blueprint,
+        blueprint: &Self::Blueprint,
         _dtypes: &MatmulElems,
         _vector_sizes: &MatmulVectorSizes,
     ) -> Result<CubeDimResource, MatmulSetupError> {
-        // Could be moved to blueprint to be less hard coded
-        Ok(CubeDimResource::Planes(8))
+        Ok(CubeDimResource::Planes(blueprint.num_planes as u32))
     }
 
     fn validate_blueprint<R: Runtime>(
         _client: &ComputeClient<R>,
-        blueprint: &Self::Blueprint,
+        _blueprint: &Self::Blueprint,
         problem: &MatmulProblem,
         _dtypes: &MatmulElems,
         vector_sizes: &MatmulVectorSizes,
     ) -> Result<(), MatmulSetupError> {
-        if blueprint.vector_size_out > 1 {
-            return Err(MatmulSetupError::InvalidConfig(Box::new(
-                "Vector size on output not supported",
-            )));
-        }
-
         if let Some(scheme) = problem.lhs_scheme
             && let QuantLevel::Block(block_size) = scheme.level
         {

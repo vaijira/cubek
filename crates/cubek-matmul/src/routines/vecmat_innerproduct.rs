@@ -3,6 +3,7 @@ use std::fmt::Display;
 use cubecl::{Runtime, client::ComputeClient};
 use cubek_std::{
     PartitionSize, TileSize,
+    cube_count::{CubeCountStrategy, GlobalOrderStrategy, HypercubeBlueprint, SmAllocation},
     tile::{Filled, Strided},
 };
 
@@ -24,33 +25,30 @@ use crate::{
         },
         tile::{TileMatmulFamily, plane_vec_mat_inner_product::PlaneVecMatInnerProduct},
     },
-    definition::{
-        CubeCountStrategy, GlobalOrderStrategy, HypercubeBlueprint, MatmulElems, MatmulProblem,
-        MatmulSetupError, SmAllocation, TilingBlueprint, TilingScheme,
-    },
+    definition::{MatmulElems, MatmulProblem, MatmulSetupError, TilingBlueprint, TilingScheme},
     launch::RuntimeConfig,
     routines::{BlueprintStrategy, DeviceSettings, ExpandInfo, LaunchInfo, Routine},
 };
 
-pub struct SimpleVecMatAlgorithm {}
+pub struct VecMatInnerProductAlgorithm {}
 
 #[derive(Default, Clone)]
-pub struct VecMatStrategy {}
+pub struct VecMatInnerProductStrategy {}
 
-impl Display for VecMatStrategy {
+impl Display for VecMatInnerProductStrategy {
     fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Ok(())
     }
 }
 
-impl From<()> for VecMatStrategy {
+impl From<()> for VecMatInnerProductStrategy {
     fn from(_value: ()) -> Self {
         Self {}
     }
 }
 
-impl<RC: RuntimeConfig> Routine<RC> for SimpleVecMatAlgorithm {
-    type Strategy = VecMatStrategy;
+impl<RC: RuntimeConfig> Routine<RC> for VecMatInnerProductAlgorithm {
+    type Strategy = VecMatInnerProductStrategy;
     type BatchMatmul = PartitionedBatchMatmulFamily<
         RC,
         SimpleMatmulFamily<
@@ -135,10 +133,10 @@ impl<RC: RuntimeConfig> Routine<RC> for SimpleVecMatAlgorithm {
     }
 }
 
-pub struct DoubleVecMatAlgorithm {}
+pub struct DoubleVecMatInnerProductAlgorithm {}
 
-impl<RC: RuntimeConfig> Routine<RC> for DoubleVecMatAlgorithm {
-    type Strategy = VecMatStrategy;
+impl<RC: RuntimeConfig> Routine<RC> for DoubleVecMatInnerProductAlgorithm {
+    type Strategy = VecMatInnerProductStrategy;
 
     type BatchMatmul = PartitionedBatchMatmulFamily<
         RC,
@@ -245,11 +243,12 @@ fn infer_blueprint_vecmat<R: Runtime>(
         None => CubeCountStrategy::FromProblem,
     };
 
-    let hypercube = HypercubeBlueprint::builder(&tiling_scheme)
-        .global_order_strategy(GlobalOrderStrategy::SwizzleRow {
-            m: problem.m as u32,
-            w: 2,
-        })
+    let hypercube = HypercubeBlueprint::builder()
+        .global_order(
+            GlobalOrderStrategy::SwizzleRow { w: 2 },
+            problem.m as u32 / tiling_scheme.elements_per_global_partition_along_m(),
+            problem.n as u32 / tiling_scheme.elements_per_global_partition_along_n(),
+        )
         .cube_count_strategy(cube_count_strategy)
         .build();
 

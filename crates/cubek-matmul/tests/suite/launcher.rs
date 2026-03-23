@@ -4,6 +4,7 @@ use cubecl::server::ServerError;
 use cubecl::std::tensor::TensorHandle;
 use cubek_matmul::definition::AvailableVectorSizes;
 use cubek_matmul::definition::MatmulIdent;
+use cubek_matmul::definition::cube_mapping_launch;
 use cubek_matmul::launch::ConcreteOutputFactory;
 use cubek_matmul::launch::ConcreteOutputFactory as _;
 
@@ -38,10 +39,10 @@ pub enum InputRepresentation {
 #[allow(unused)]
 /// Test the correctness of the specified Matmul on the given device,
 /// against a naive CPU implementation over the given problem
-pub fn test_matmul_algorithm<A: Routine<(), Blueprint = TilingBlueprint>>(
+pub fn test_matmul_algorithm<A: Routine<()>>(
     client: ComputeClient<TestRuntime>,
     mut problem: MatmulProblem,
-    blueprint: A::Blueprint,
+    blueprint_strategy: BlueprintStrategy<(), A>,
     input_representation: InputRepresentation,
 ) {
     let (lhs, lhs_data) = TestInput::new(
@@ -62,7 +63,7 @@ pub fn test_matmul_algorithm<A: Routine<(), Blueprint = TilingBlueprint>>(
         problem.global_dtypes.rhs,
         layout_to_stride_spec(problem.rhs_layout),
         DataKind::Random {
-            seed: 1234,
+            seed: 5678,
             distribution: Distribution::Uniform(-1., 1.),
         },
     )
@@ -84,12 +85,14 @@ pub fn test_matmul_algorithm<A: Routine<(), Blueprint = TilingBlueprint>>(
     let rhs_handle = MatmulInputBinding::Normal(rhs.binding(), problem.global_dtypes.rhs);
     let out_handle = out.clone().binding();
 
+    println!("{:?}", problem);
+
     let all_elems = MatmulElems::from_globals(&problem.global_dtypes.clone());
 
     match launch_matmul_algorithm::<A>(
         &client,
         &problem,
-        blueprint,
+        blueprint_strategy,
         &all_elems,
         input_representation,
         lhs_handle,
@@ -106,10 +109,10 @@ pub fn test_matmul_algorithm<A: Routine<(), Blueprint = TilingBlueprint>>(
 
 /// Returns whether execution succeeded
 #[allow(clippy::too_many_arguments)]
-pub fn launch_matmul_algorithm<A: Routine<(), Blueprint = TilingBlueprint>>(
+pub fn launch_matmul_algorithm<A: Routine<()>>(
     client: &ComputeClient<TestRuntime>,
     problem: &MatmulProblem,
-    blueprint: A::Blueprint,
+    blueprint_strategy: BlueprintStrategy<(), A>,
     dtypes: &MatmulElems,
     input_representation: InputRepresentation,
     lhs: MatmulInputBinding<TestRuntime>,
@@ -138,11 +141,7 @@ pub fn launch_matmul_algorithm<A: Routine<(), Blueprint = TilingBlueprint>>(
 
     let device_settings = A::device_settings(client, vector_sizes);
 
-    let expand_info = match A::expand_blueprint(
-        problem,
-        &device_settings,
-        &BlueprintStrategy::Forced(blueprint),
-    ) {
+    let expand_info = match A::expand_blueprint(problem, &device_settings, &blueprint_strategy) {
         Ok(launch_info) => launch_info,
         Err(err) => {
             return ExecutionOutcome::CompileError(format!("Can't launch the test: {err}"));
@@ -167,6 +166,9 @@ pub fn launch_matmul_algorithm<A: Routine<(), Blueprint = TilingBlueprint>>(
     let cube_count_plan = launch_info.cube_count_plan;
     let blueprint = launch_info.blueprint;
     let dtypes = &launch_info.dtypes.clone();
+
+    println!("{:?}", cube_dim);
+    println!("{:?}", cube_count_plan.resolve());
 
     let output = <TensorOutput<_> as ConcreteOutputFactory<A>>::create(
         out,
@@ -196,7 +198,7 @@ pub fn launch_matmul_algorithm<A: Routine<(), Blueprint = TilingBlueprint>>(
                     inputs,
                     output,
                     (),
-                    cube_count_plan.as_args(),
+                    cube_mapping_launch(&cube_count_plan),
                     blueprint,
                     dtypes,
                     &vector_sizes,
@@ -222,7 +224,7 @@ pub fn launch_matmul_algorithm<A: Routine<(), Blueprint = TilingBlueprint>>(
                     inputs,
                     output,
                     (),
-                    cube_count_plan.as_args(),
+                    cube_mapping_launch(&cube_count_plan),
                     blueprint,
                     dtypes,
                     &vector_sizes,

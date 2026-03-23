@@ -1,7 +1,7 @@
 use crate::components::{global::cube_dim_validation, stage::NumStages};
 use crate::definition::{
-    Blueprint, CubeCountPlan, CubeMappingLaunch, MatmulElems, MatmulProblem, MatmulSetupError,
-    MatmulVectorSizes, TilingBlueprint,
+    Blueprint, CubeMappingLaunch, MatmulElems, MatmulProblem, MatmulSetupError, MatmulVectorSizes,
+    TilingBlueprint,
 };
 use crate::launch::{InputRuntimeArg, MatmulArgs, OutputRuntimeArg};
 use crate::routines::BlueprintStrategy;
@@ -11,6 +11,7 @@ use crate::{
     launch::ConfigRuntimeArg,
 };
 use cubecl::prelude::*;
+use cubek_std::cube_count::CubeCountPlan;
 use std::fmt::Display;
 
 /// Specifications for a matmul algorithm
