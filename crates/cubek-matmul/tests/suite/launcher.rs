@@ -4,6 +4,7 @@ use cubecl::server::ServerError;
 use cubecl::std::tensor::TensorHandle;
 use cubek_matmul::definition::AvailableVectorSizes;
 use cubek_matmul::definition::MatmulIdent;
+use cubek_matmul::definition::MatmulVectorSizes;
 use cubek_matmul::definition::cube_mapping_launch;
 use cubek_matmul::launch::ConcreteOutputFactory;
 use cubek_matmul::launch::ConcreteOutputFactory as _;
@@ -85,8 +86,6 @@ pub fn test_matmul_algorithm<A: Routine<()>>(
     let rhs_handle = MatmulInputBinding::Normal(rhs.binding(), problem.global_dtypes.rhs);
     let out_handle = out.clone().binding();
 
-    println!("{:?}", problem);
-
     let all_elems = MatmulElems::from_globals(&problem.global_dtypes.clone());
 
     match launch_matmul_algorithm::<A>(
@@ -166,9 +165,6 @@ pub fn launch_matmul_algorithm<A: Routine<()>>(
     let cube_count_plan = launch_info.cube_count_plan;
     let blueprint = launch_info.blueprint;
     let dtypes = &launch_info.dtypes.clone();
-
-    println!("{:?}", cube_dim);
-    println!("{:?}", cube_count_plan.resolve());
 
     let output = <TensorOutput<_> as ConcreteOutputFactory<A>>::create(
         out,

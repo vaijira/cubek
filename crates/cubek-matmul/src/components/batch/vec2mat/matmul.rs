@@ -101,31 +101,38 @@ impl<MP: MatmulTypes> BatchMatmul<(), MP> for Vec2Mat<MP> {
     ) {
         let num_planes = config.num_planes;
         let plane_dim = config.plane_dim;
-        let (_, n_index, _) = cube_mapping.cube_pos_to_tensor_pos();
-        // m_index should be 1
-        // batch_index: not supported yet
-
-        let plane_id = UNIT_POS_Y;
-        let unit_id = UNIT_POS_X;
 
         let lhs = Args::view_lhs(state);
         let rhs = Args::view_rhs(state);
         let out = Args::view_out(state);
 
-        // m=1
-        // let (_, _, n) = out.shape();
         let (_, _, k) = lhs.shape();
+        let (_, _, n) = out.shape();
+        let (_, n_cube_id, batch_cube_id) = cube_mapping.cube_pos_to_tensor_pos();
 
-        let lhs = lhs.view(SliceIndex::new(0, lhs.shape()));
-        let rhs = rhs.view(SliceIndex::new(0, rhs.shape()));
-        let out = out.view_mut(SliceIndex::new(0, out.shape()));
+        let lhs_batch = Args::batch_lhs(state, batch_cube_id as usize);
+        let rhs_batch = Args::batch_rhs(state, batch_cube_id as usize);
+        let out_batch = Args::batch_out(state, batch_cube_id as usize);
+
+        let lhs = lhs.view(SliceIndex::new(lhs_batch, lhs.shape()));
+        let rhs = rhs.view(SliceIndex::new(rhs_batch, rhs.shape()));
+        let out = out.view_mut(SliceIndex::new(out_batch, out.shape()));
 
         let size!(NA) = comptime![Ord::max(lhs.vector_size(), rhs.vector_size())];
+        let vector_size = NA::value() as u32;
 
-        let tile_size = plane_dim * NA::value() as u32;
-        let cube_offset = n_index * num_planes * tile_size;
-        let plane_offset = plane_id * tile_size;
-        let n_pos = cube_offset + plane_offset + unit_id;
+        let plane_id = UNIT_POS_Y;
+        let unit_id = UNIT_POS_X;
+
+        let tile_size = plane_dim * vector_size;
+        let absolute_plane_id = n_cube_id * num_planes + plane_id;
+        let unit_pos_n = absolute_plane_id * plane_dim + unit_id;
+        let vectorized_pos_n = unit_pos_n * vector_size;
+
+        // TODO mask if within plane
+        if vectorized_pos_n >= n {
+            terminate!();
+        }
 
         let num_tiles = k / tile_size;
 
@@ -135,8 +142,7 @@ impl<MP: MatmulTypes> BatchMatmul<(), MP> for Vec2Mat<MP> {
             let swizzled_tile_index = (tile_index + plane_id) % num_tiles;
             let k_base = swizzled_tile_index * plane_dim;
 
-            // Load the whole lhs tile
-            let local_lhs_vec = lhs.read((0, k_base + unit_id));
+            let local_lhs_vec = lhs.read_checked((0, (k_base + unit_id) * vector_size));
 
             #[unroll]
             for plane_iter in 0..plane_dim {
@@ -146,14 +152,15 @@ impl<MP: MatmulTypes> BatchMatmul<(), MP> for Vec2Mat<MP> {
                     local_lhs_vec
                 };
 
+                let rhs_k_vec_base = (k_base + plane_iter) * vector_size;
                 for vec_iter in 0..NA::value() as u32 {
                     let lhs_scalar = lhs_vec[vec_iter as usize];
-                    let rhs_vec = rhs.read((k_base + plane_iter + vec_iter, n_pos));
+                    let rhs_vec = rhs.read_checked((rhs_k_vec_base + vec_iter, vectorized_pos_n));
                     acc += Vector::cast_from(lhs_scalar) * Vector::cast_from(rhs_vec);
                 }
             }
         }
 
-        out.write((0, n_pos), Vector::cast_from(acc));
+        out.write_checked((0, vectorized_pos_n), Vector::cast_from(acc));
     }
 }

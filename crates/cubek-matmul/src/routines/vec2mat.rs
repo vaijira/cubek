@@ -3,9 +3,7 @@ use std::{
     fmt::Display,
 };
 
-use cubek_std::cube_count::{
-    CubeCountPlan, CubeCountStrategy, GlobalOrder, GlobalOrderStrategy, HypercubeBlueprint,
-};
+use cubek_std::cube_count::{CubeCountPlan, CubeCountStrategy, GlobalOrder, HypercubeBlueprint};
 
 use crate::{
     components::batch::{
@@ -59,11 +57,7 @@ impl Routine<()> for Vec2MatRoutine {
                     tile_dim,
                     hypercube_blueprint: HypercubeBlueprint::builder()
                         .cube_count_strategy(CubeCountStrategy::Flattened)
-                        .global_order(
-                            GlobalOrderStrategy::Fixed(GlobalOrder::RowMajor),
-                            1,
-                            (problem.n / (tile_dim * num_planes)) as u32,
-                        )
+                        .global_order(GlobalOrder::RowMajor)
                         .build(),
                 };
 
@@ -102,7 +96,6 @@ impl Routine<()> for Vec2MatRoutine {
             (1, working_cubes as u32, problem.num_batches() as u32).into(),
             &device_settings.max_cube_count,
         );
-        println!("{:?}", device_settings.vector_sizes);
 
         Ok(LaunchInfo {
             blueprint,
