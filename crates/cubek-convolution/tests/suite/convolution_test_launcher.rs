@@ -10,10 +10,7 @@ use cubek_convolution::{
     components::{ConvGemmConfig, ConvSetupError, ConvolutionOperation},
     forward::args::{ConcreteArgs, ConcreteInputsFactory, ConcreteOutputFactory},
 };
-use cubek_matmul::{
-    definition::{AvailableVectorSizes, MatmulSetupError},
-    launch::MatmulInputBinding,
-};
+use cubek_matmul::definition::{AvailableVectorSizes, MatmulSetupError};
 use cubek_matmul::{
     definition::{MatmulElems, MatmulIdent, TilingBlueprint},
     routines::Routine,
@@ -22,6 +19,7 @@ use cubek_matmul::{
     launch::{InputArg, OutputArg},
     routines::BlueprintStrategy,
 };
+use cubek_std::InputBinding;
 
 use super::test_utils::TestPrecision;
 
@@ -126,9 +124,9 @@ where
     .unwrap();
 
     let lhs_handle =
-        MatmulInputBinding::new(lhs_handle, P::EG::as_type_native_unchecked().storage_type());
+        InputBinding::new(lhs_handle, P::EG::as_type_native_unchecked().storage_type());
     let rhs_handle =
-        MatmulInputBinding::new(rhs_handle, P::EG::as_type_native_unchecked().storage_type());
+        InputBinding::new(rhs_handle, P::EG::as_type_native_unchecked().storage_type());
 
     let (inputs, runtime_args) = <InputArg<A::Args> as ConcreteInputsFactory<A::Routine>>::create(
         lhs_handle,

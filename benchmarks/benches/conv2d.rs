@@ -10,11 +10,9 @@ use cubek::{
     convolution::{
         self as convolution, AcceleratedTileKind, ConvolutionArgs, ReadingStrategy, Strategy,
     },
-    matmul::{
-        definition::{MatmulElems, MatmulPrecision, MatrixPrecision},
-        launch::MatmulInputBinding,
-    },
+    matmul::definition::{MatmulElems, MatmulPrecision, MatrixPrecision},
     random::random_uniform,
+    std::InputBinding,
 };
 use std::marker::PhantomData;
 
@@ -96,9 +94,9 @@ impl<R: Runtime, MP: MatmulPrecision> Benchmark for Conv2dBench<R, MP> {
                 tile_kind: AcceleratedTileKind::Cmma,
             },
             &self.client,
-            MatmulInputBinding::Normal(input.binding(), elems.lhs_global),
-            MatmulInputBinding::Normal(weight.binding(), elems.rhs_global),
-            Some(MatmulInputBinding::Normal(bias.binding(), elems.acc_global)),
+            InputBinding::Normal(input.binding(), elems.lhs_global),
+            InputBinding::Normal(weight.binding(), elems.rhs_global),
+            Some(InputBinding::Normal(bias.binding(), elems.acc_global)),
             out.binding(),
             self.args.clone(),
             elems,
