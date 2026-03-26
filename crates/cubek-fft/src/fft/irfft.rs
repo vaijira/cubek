@@ -14,10 +14,9 @@ use crate::layout::BatchSignalLayout;
 pub fn irfft<R: Runtime>(
     spectrum_re: TensorHandle<R>,
     spectrum_im: TensorHandle<R>,
+    dim: usize,
     dtype: StorageType,
 ) -> TensorHandle<R> {
-    // Assumes fft always done on last dim
-    let dim = spectrum_re.shape().len() - 1;
     assert!(
         spectrum_re.shape() == spectrum_im.shape(),
         "Spectrum's real and imaginary parts should be the same shape, got {:?} and {:?}",
@@ -30,14 +29,18 @@ pub fn irfft<R: Runtime>(
     let mut signal_shape = spectrum_re.shape().clone();
     signal_shape[dim] = (spectrum_re.shape()[dim] - 1) * 2;
     let num_elems = signal_shape.iter().product::<usize>();
-    let signal =
-        TensorHandle::new_contiguous(signal_shape, client.empty(num_elems * dtype.size()), dtype);
+    let signal = TensorHandle::new_contiguous(
+        signal_shape.clone(),
+        client.empty(num_elems * dtype.size()),
+        dtype,
+    );
 
     irfft_launch::<R>(
         &client,
         spectrum_re.binding(),
         spectrum_im.binding(),
         signal.clone().binding(),
+        dim,
         dtype,
     )
     .unwrap();
@@ -51,12 +54,18 @@ pub fn irfft_launch<R: Runtime>(
     spectrum_re: TensorBinding<R>,
     spectrum_im: TensorBinding<R>,
     signal: TensorBinding<R>,
+    dim: usize,
     dtype: StorageType,
 ) -> Result<(), LaunchError> {
-    // - signal has shape: [windows, channels, num_samples]
-    let windows = spectrum_re.shape.as_slice()[0];
-    let channels = spectrum_re.shape.as_slice()[1];
-    let cube_count = CubeCount::new_2d(windows as u32, channels as u32);
+    let count: usize = signal
+        .shape
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != dim)
+        .map(|(_, e)| *e)
+        .product();
+
+    let cube_count = CubeCount::new_1d(count as u32);
     let cube_dim = CubeDim::new_single();
     let vectorization = 1;
 
@@ -85,12 +94,6 @@ pub(crate) fn irfft_kernel<F: Float, N: Size>(
     #[define(F)] _dtype: StorageType,
     #[define(N)] _vector_size: usize,
 ) {
-    // Shapes:
-    // - spectrums have shape: [windows, channels, num_freq_bins]
-    //      with num_freq_bins = num_samples / 2 + 1
-    // - signal has shape: [windows, channels, num_samples]
-    //      with num_samples a power of 2 larger than 8
-
     let batch_index = CUBE_POS;
     irfft_kernel_one_batch(spectrums_re, spectrums_im, signal, batch_index, num_samples);
 }

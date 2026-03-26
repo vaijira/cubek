@@ -14,12 +14,13 @@ fn test_launch(
     client: ComputeClient<TestRuntime>,
     signal_shape: Vec<usize>,
     spectrum_shape: Vec<usize>,
+    dim: usize,
 ) {
     let dtype = f32::as_type_native_unchecked().storage_type();
 
     let (white_noise_handle, white_noise_data) = TestInput::new(
         client.clone(),
-        signal_shape,
+        signal_shape.clone(),
         dtype,
         StrideSpec::RowMajor,
         DataKind::Random {
@@ -52,6 +53,7 @@ fn test_launch(
         white_noise_handle.binding(),
         spectrum_re_handle.clone().binding(),
         spectrum_im_handle.clone().binding(),
+        dim,
         dtype,
     )
     .into()
@@ -99,7 +101,8 @@ fn stereo_100ms() {
     let client = <TestRuntime as Runtime>::client(&Default::default());
     let signal_shape = [5, 2, 2048].to_vec();
     let spectrum_shape = [5, 2, 1025].to_vec();
-    test_launch(client, signal_shape, spectrum_shape);
+    let dim = signal_shape.len() - 1;
+    test_launch(client, signal_shape, spectrum_shape, dim);
 }
 
 #[test]
@@ -107,5 +110,6 @@ fn mono_500ms() {
     let client = <TestRuntime as Runtime>::client(&Default::default());
     let signal_shape = [22, 1, 2048].to_vec();
     let spectrum_shape = [22, 1, 1025].to_vec();
-    test_launch(client, signal_shape, spectrum_shape);
+    let dim = signal_shape.len() - 1;
+    test_launch(client, signal_shape, spectrum_shape, dim);
 }

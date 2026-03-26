@@ -13,10 +13,14 @@ use crate::layout::BatchSignalLayout;
 /// then launches the RFFT kernel to fill them with the right values
 pub fn rfft<R: Runtime>(
     signal: TensorHandle<R>,
+    dim: usize,
     dtype: StorageType,
 ) -> (TensorHandle<R>, TensorHandle<R>) {
-    // Assumes fft always done on last dim
-    let dim = signal.shape().len() - 1;
+    assert!(
+        dim < signal.shape().len(),
+        "dim must be between 0 and {}",
+        signal.shape().len()
+    );
     assert!(
         signal.shape()[dim].is_power_of_two(),
         "RFFT requires power-of-2 length"
@@ -43,6 +47,7 @@ pub fn rfft<R: Runtime>(
         signal.binding(),
         spectrum_re.clone().binding(),
         spectrum_im.clone().binding(),
+        dim,
         dtype,
     )
     .unwrap();
@@ -56,11 +61,18 @@ pub fn rfft_launch<R: Runtime>(
     signal: TensorBinding<R>,
     spectrum_re: TensorBinding<R>,
     spectrum_im: TensorBinding<R>,
+    dim: usize,
     dtype: StorageType,
 ) -> Result<(), LaunchError> {
-    let windows = signal.shape.as_slice()[0];
-    let channels = signal.shape.as_slice()[1];
-    let cube_count = CubeCount::new_2d(windows as u32, channels as u32);
+    let count: usize = signal
+        .shape
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != dim)
+        .map(|(_, e)| *e)
+        .product();
+
+    let cube_count = CubeCount::new_1d(count as u32);
     let cube_dim = CubeDim::new_single();
     let vectorization = 1;
     let shape = *signal.shape.last().unwrap();
@@ -89,12 +101,6 @@ pub(crate) fn rfft_kernel<F: Float, N: Size>(
     #[define(F)] _dtype: StorageType,
     #[define(N)] _vector_size: usize,
 ) {
-    // Shapes:
-    // - signal has shape: [windows, channels, num_samples]
-    //      with num_samples is a power of 2 larger than 8
-    // - spectrums have shape [windows, channels, num_freq_bins]
-    //      with num_freq_bins = num_samples / 2 + 1
-
     let window_index = CUBE_POS;
     rfft_kernel_one_window(
         signal,
@@ -116,9 +122,6 @@ pub(crate) fn rfft_kernel_one_window<F: Float, N: Size>(
     window_index: usize,
     #[comptime] num_samples: usize,
 ) {
-    // The following code allow to ignore the batch index and assume only one window
-    // - signal has shape: [num_samples]
-    // - spectrums have shape [num_freq_bins]
     let signal_layout = BatchSignalLayout::new(signal, window_index);
     let spectrums_re_layout = BatchSignalLayout::new(spectrums_re, window_index);
     let spectrums_im_layout = BatchSignalLayout::new(spectrums_im, window_index);
