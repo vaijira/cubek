@@ -40,7 +40,10 @@ pub enum InputRepresentation {
 #[allow(unused)]
 /// Test the correctness of the specified Matmul on the given device,
 /// against a naive CPU implementation over the given problem
-pub fn test_matmul_algorithm<A: Routine<()>>(
+#[deprecated(
+    note = "This uses another launch than the exported launch, so it's error-prone. Use `test_matmul_strategy` instead."
+)]
+pub fn test_matmul_routine<A: Routine<()>>(
     client: ComputeClient<TestRuntime>,
     mut problem: MatmulProblem,
     blueprint_strategy: BlueprintStrategy<(), A>,
