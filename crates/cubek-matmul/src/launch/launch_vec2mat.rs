@@ -1,6 +1,6 @@
 //! Vec2Mat matmul kernel implementation
 use cubecl::std::tensor::{MatrixBatchLayout, matrix_batch_layout};
-use cubecl::zspace::shape;
+use cubecl::zspace::Shape;
 use cubecl::{VectorizationError, prelude::*};
 use cubek_std::MatrixLayout;
 
@@ -83,12 +83,15 @@ pub fn launch_ref<R: Runtime>(
         .max(rhs.required_address_type())
         .max(out.required_address_type(dtypes.acc_global.size()));
 
+    let lhs_batches: Shape = lhs.shape().to_vec()[..rank - 2].into();
+    let rhs_batches: Shape = rhs.shape().to_vec()[..rank - 2].into();
+
     let problem = MatmulProblem::from_parameters(
         1,
         n,
         k,
-        shape![1],
-        shape![1],
+        lhs_batches,
+        rhs_batches,
         MatrixLayout::RowMajor,
         MatrixLayout::from_shape_and_strides(rhs_shape, &rhs.data().strides, rhs.scheme())?,
         MatrixLayout::RowMajor,

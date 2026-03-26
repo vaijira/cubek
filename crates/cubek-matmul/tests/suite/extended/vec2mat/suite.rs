@@ -167,6 +167,85 @@ pub fn test_large_broadcast_batched() {
     test_vec2mat(case);
 }
 
+/// Regression test: launch_vec2mat::launch_ref used to hardcode batch dims as
+/// shape![1], which caused a sequence length mismatch panic when the actual
+/// tensors were 2D (no batch dimension). The BatchLayout's batch_shape had 1
+/// element but batch_strides had 0 elements, crashing in the #[unroll] loop.
+#[test]
+pub fn test_2d_no_batch_via_launch_ref() {
+    let client = TestRuntime::client(&Default::default());
+    let plane_size = client.properties().hardware.plane_size_max as usize;
+    let n = plane_size * 4;
+    let k = plane_size * 4;
+
+    // 2D shapes: no batch dimension
+    let lhs_shape = shape![1, k];
+    let rhs_shape = shape![k, n];
+    let out_shape = shape![1, n];
+
+    let global_elems = elems();
+    let all_elems = MatmulElems::from_globals(&global_elems);
+
+    let (lhs, lhs_data) = TestInput::new(
+        client.clone(),
+        lhs_shape.clone(),
+        global_elems.lhs,
+        layout_to_stride_spec(MatrixLayout::RowMajor),
+        DataKind::Random {
+            seed: 1234,
+            distribution: Distribution::Uniform(-1., 1.),
+        },
+    )
+    .generate_with_f32_host_data();
+
+    let (rhs, rhs_data) = TestInput::new(
+        client.clone(),
+        rhs_shape.clone(),
+        global_elems.rhs,
+        layout_to_stride_spec(MatrixLayout::RowMajor),
+        DataKind::Random {
+            seed: 5678,
+            distribution: Distribution::Uniform(-1., 1.),
+        },
+    )
+    .generate_with_f32_host_data();
+
+    let out = TestInput::new(
+        client.clone(),
+        out_shape.clone(),
+        global_elems.out,
+        layout_to_stride_spec(MatrixLayout::RowMajor),
+        DataKind::Zeros,
+    )
+    .generate_without_host_data();
+
+    let lhs_strides = lhs.strides().clone();
+    let rhs_strides = rhs.strides().clone();
+    let out_strides = out.strides().clone();
+
+    let lhs_handle = MatmulInputBinding::Normal(lhs.binding(), global_elems.lhs);
+    let rhs_handle = MatmulInputBinding::Normal(rhs.binding(), global_elems.rhs);
+    let out_handle = out.clone().binding();
+
+    launch_vec2mat::launch_ref(&client, lhs_handle, rhs_handle, out_handle, &all_elems).unwrap();
+
+    let problem = MatmulProblem::from_shapes_and_strides(
+        lhs_shape,
+        rhs_shape,
+        out_shape,
+        lhs_strides,
+        rhs_strides,
+        out_strides,
+        global_elems,
+        AddressType::U32,
+        None,
+        None,
+    )
+    .unwrap();
+
+    assert_result(&lhs_data, &rhs_data, &problem, &client, out, all_elems);
+}
+
 fn test_vec2mat(case: Vec2MatTestCase) {
     let client = TestRuntime::client(&Default::default());
     let plane_size = client.properties().hardware.plane_size_max as usize;
