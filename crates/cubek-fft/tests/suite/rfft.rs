@@ -10,13 +10,10 @@ use cubek_test_utils::{
 
 use crate::suite::reference::rfft_ref;
 
-fn test_launch(
-    client: ComputeClient<TestRuntime>,
-    signal_shape: Vec<usize>,
-    spectrum_shape: Vec<usize>,
-    dim: usize,
-) {
+fn test_launch(client: ComputeClient<TestRuntime>, signal_shape: Vec<usize>, dim: usize) {
     let dtype = f32::as_type_native_unchecked().storage_type();
+    let mut spectrum_shape = signal_shape.clone();
+    spectrum_shape[dim] = signal_shape[dim] / 2 + 1;
 
     let (white_noise_handle, white_noise_data) = TestInput::new(
         client.clone(),
@@ -63,6 +60,7 @@ fn test_launch(
             white_noise_data,
             spectrum_re_handle,
             spectrum_im_handle,
+            dim,
         )
         .as_test_outcome(),
         ExecutionOutcome::CompileError(e) => TestOutcome::CompileError(e),
@@ -75,10 +73,11 @@ pub fn assert_rfft_result(
     signal: HostData,
     spectrum_re: TensorHandle<TestRuntime>,
     spectrum_im: TensorHandle<TestRuntime>,
+    dim: usize,
 ) -> ValidationResult {
     // big epsilon because with wgpu, compute is less precise
     let epsilon = 0.4;
-    let (expected_re, expected_im) = rfft_ref(&signal);
+    let (expected_re, expected_im) = rfft_ref(&signal, dim);
 
     let actual_spectrum_re = HostData::from_tensor_handle(client, spectrum_re, HostDataType::F32);
     let actual_spectrum_im = HostData::from_tensor_handle(client, spectrum_im, HostDataType::F32);
@@ -97,19 +96,41 @@ pub fn assert_rfft_result(
 }
 
 #[test]
-fn stereo_100ms() {
+fn rfft_3d_axis_last() {
     let client = <TestRuntime as Runtime>::client(&Default::default());
     let signal_shape = [5, 2, 2048].to_vec();
-    let spectrum_shape = [5, 2, 1025].to_vec();
     let dim = signal_shape.len() - 1;
-    test_launch(client, signal_shape, spectrum_shape, dim);
+    test_launch(client, signal_shape, dim);
 }
 
 #[test]
-fn mono_500ms() {
+fn rfft_3d_axis_1_strided() {
+    let client = <TestRuntime as Runtime>::client(&Default::default());
+    let signal_shape = [5, 64, 1000].to_vec();
+    let dim = 1;
+    test_launch(client, signal_shape, dim);
+}
+
+#[test]
+fn rfft_3d_axis_0_strided() {
+    let client = <TestRuntime as Runtime>::client(&Default::default());
+    let signal_shape = [128, 6, 1000].to_vec();
+    let dim = 0;
+    test_launch(client, signal_shape, dim);
+}
+
+#[test]
+fn rfft_4d_axis_1_strided() {
+    let client = <TestRuntime as Runtime>::client(&Default::default());
+    let signal_shape = [5, 256, 6, 42].to_vec();
+    let dim = 1;
+    test_launch(client, signal_shape, dim);
+}
+
+#[test]
+fn rfft_3d_batch_singleton_dim() {
     let client = <TestRuntime as Runtime>::client(&Default::default());
     let signal_shape = [22, 1, 2048].to_vec();
-    let spectrum_shape = [22, 1, 1025].to_vec();
     let dim = signal_shape.len() - 1;
-    test_launch(client, signal_shape, spectrum_shape, dim);
+    test_launch(client, signal_shape, dim);
 }

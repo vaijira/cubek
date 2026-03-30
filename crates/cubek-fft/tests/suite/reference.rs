@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use cubecl::zspace::Shape;
+use cubecl::zspace::{Shape, Strides};
 use cubek_test_utils::{HostData, HostDataVec, StrideSpec};
 use num_complex::Complex;
 
@@ -40,58 +40,51 @@ fn fft_recursive(x: &mut [Complex<f32>], fft_mode: FftMode) {
     }
 }
 /// Reference IRFFT: reconstruct real signal from first n/2 + 1 complex bins
-pub fn irfft_ref(re: &HostData, im: &HostData) -> HostData {
-    // Expect shape: [num_windows, num_channels, num_freq_bins]
-    let [num_windows, num_channels, num_freq_bins] = re
-        .shape
-        .as_slice()
-        .try_into()
-        .expect("Spectrum shape should be [num_windows, num_channels, num_freq_bins]");
-
+pub fn irfft_ref(re: &HostData, im: &HostData, dim: usize) -> HostData {
+    let in_shape = re.shape.as_slice();
+    let num_freq_bins = in_shape[dim];
     let sample_window = (num_freq_bins - 1) * 2; // reconstruct original window length
     assert!(
         sample_window.is_power_of_two(),
         "Requires power-of-2 sample_window length"
     );
 
-    let out_shape = Shape::new([num_windows, num_channels, sample_window]);
+    let mut out_shape_vec = in_shape.to_vec();
+    out_shape_vec[dim] = sample_window;
+    let out_shape = Shape::from(out_shape_vec);
+    let num_windows = re.shape.num_elements() / num_freq_bins;
     let out_strides = StrideSpec::RowMajor.compute_strides(&out_shape);
 
-    let mut windows: Vec<Vec<Complex<f32>>> = Vec::with_capacity(num_windows * num_channels);
+    let mut flattened = vec![0.0; out_shape.num_elements()];
 
-    for window in 0..num_windows {
-        for channel in 0..num_channels {
-            // Reconstruct full complex spectrum
-            let mut spectrum = vec![Complex::new(0.0, 0.0); sample_window];
+    for l in 0..num_windows {
+        // Reconstruct full complex spectrum
+        let mut coords = get_coords(l, in_shape, dim);
+        let mut spectrum = vec![Complex::new(0.0, 0.0); sample_window];
 
-            for k in 0..num_freq_bins {
-                let r = re.get_f32(&[window, channel, k]);
-                let i = im.get_f32(&[window, channel, k]);
-                spectrum[k] = Complex::new(r, i);
-            }
+        for k in 0..num_freq_bins {
+            coords[dim] = k;
+            let r = re.get_f32(&coords);
+            let i = im.get_f32(&coords);
+            spectrum[k] = Complex::new(r, i);
+        }
 
-            // Fill mirrored bins for Hermitian symmetry
-            for k in 1..num_freq_bins - 1 {
-                spectrum[sample_window - k] = spectrum[k].conj();
-            }
+        // Fill mirrored bins for Hermitian symmetry
+        for k in 1..num_freq_bins - 1 {
+            spectrum[sample_window - k] = spectrum[k].conj();
+        }
 
-            // Inverse FFT
-            fft_recursive(&mut spectrum, FftMode::Inverse);
+        // Inverse FFT
+        fft_recursive(&mut spectrum, FftMode::Inverse);
+
+        for i in 0..sample_window {
+            coords[dim] = i;
+            let flat_idx = compute_index(&out_strides, coords.as_slice());
 
             // normalize amplitude
-            for v in spectrum.iter_mut() {
-                *v /= sample_window as f32;
-            }
-
-            windows.push(spectrum);
+            flattened[flat_idx] = spectrum[i].re / sample_window as f32;
         }
     }
-
-    // Flatten all windows
-    let flattened: Vec<f32> = windows
-        .into_iter()
-        .flat_map(|v| v.into_iter().map(|c| c.re))
-        .collect();
 
     HostData {
         data: HostDataVec::F32(flattened),
@@ -101,53 +94,79 @@ pub fn irfft_ref(re: &HostData, im: &HostData) -> HostData {
 }
 
 /// Reference RFFT: input real slice, output first n/2 + 1 complex numbers
-pub fn rfft_ref(signal: &HostData) -> (HostData, HostData) {
-    let [num_windows, num_channels, sample_window] = signal
-        .shape
-        .as_slice()
-        .try_into()
-        .expect("Signal shape should be [num_windows, num_channels, sample_window]");
+pub fn rfft_ref(signal: &HostData, dim: usize) -> (HostData, HostData) {
+    let in_shape = signal.shape.as_slice();
+    let sample_window = in_shape[dim];
+    let num_freq_bins = sample_window / 2 + 1;
     assert!(
         sample_window.is_power_of_two(),
         "Requires power-of-2 sample_window length"
     );
 
-    // We keep only first n/2 + 1 elements (Hermitian symmetry)
-    let num_freq_bins = sample_window / 2 + 1;
-    let out_shape = Shape::new([num_windows, num_channels, num_freq_bins]);
+    let mut out_shape_vec = in_shape.to_vec();
+    out_shape_vec[dim] = num_freq_bins;
+    let out_shape = Shape::from(out_shape_vec);
+    let num_windows = signal.shape.num_elements() / sample_window;
     let out_strides = StrideSpec::RowMajor.compute_strides(&out_shape);
 
-    let mut spectrums = Vec::with_capacity(num_windows * num_channels);
+    let mut re_data = vec![0.0; out_shape.num_elements()];
+    let mut im_data = vec![0.0; out_shape.num_elements()];
+    for l in 0..num_windows {
+        let mut coords = get_coords(l, in_shape, dim);
+        let mut spectrum = Vec::with_capacity(sample_window);
+        for i in 0..sample_window {
+            coords[dim] = i;
+            let v = signal.get_f32(&coords);
+            let complex = Complex::new(v, 0.);
+            spectrum.push(complex);
+        }
 
-    for window in 0..num_windows {
-        for channel in 0..num_channels {
-            let mut spectrum = Vec::with_capacity(sample_window);
-            for i in 0..sample_window {
-                let v = signal.get_f32(&[window, channel, i]);
-                let complex = Complex::new(v, 0.);
-                spectrum.push(complex);
-            }
-
-            fft_recursive(&mut spectrum, FftMode::Forward);
-
-            spectrums.push(spectrum[..num_freq_bins].to_vec());
+        fft_recursive(&mut spectrum, FftMode::Forward);
+        for k in 0..num_freq_bins {
+            coords[dim] = k;
+            let flat_idx = compute_index(&out_strides, coords.as_slice());
+            re_data[flat_idx] = spectrum[k].re;
+            im_data[flat_idx] = spectrum[k].im;
         }
     }
 
-    let batched_spectrums: Vec<Complex<f32>> = spectrums.into_iter().flatten().collect();
-    let (re, im): (Vec<f32>, Vec<f32>) =
-        batched_spectrums.into_iter().map(|c| (c.re, c.im)).unzip();
-
     (
         HostData {
-            data: HostDataVec::F32(re),
+            data: HostDataVec::F32(re_data),
             shape: out_shape.clone(),
             strides: out_strides.clone(),
         },
         HostData {
-            data: HostDataVec::F32(im),
+            data: HostDataVec::F32(im_data),
             shape: out_shape,
             strides: out_strides,
         },
     )
+}
+
+fn get_coords(lane_idx: usize, shape: &[usize], dim: usize) -> Vec<usize> {
+    let mut coords = vec![0; shape.len()];
+    let mut temp = lane_idx;
+    for i in (0..shape.len()).rev() {
+        if i == dim {
+            continue;
+        }
+        coords[i] = temp % shape[i];
+        temp /= shape[i];
+    }
+    coords
+}
+
+pub fn compute_index(strides: &Strides, coords: &[usize]) -> usize {
+    assert_eq!(
+        coords.len(),
+        strides.rank(),
+        "Coordinate rank must match stride rank",
+    );
+
+    coords
+        .iter()
+        .zip(strides.iter())
+        .map(|(&c, &s)| c * s)
+        .sum()
 }

@@ -10,13 +10,10 @@ use cubek_test_utils::{
 
 use crate::suite::reference::irfft_ref;
 
-fn test_launch(
-    client: ComputeClient<TestRuntime>,
-    signal_shape: Vec<usize>,
-    spectrum_shape: Vec<usize>,
-    dim: usize,
-) {
+fn test_launch(client: ComputeClient<TestRuntime>, spectrum_shape: Vec<usize>, dim: usize) {
     let dtype = f32::as_type_native_unchecked().storage_type();
+    let mut signal_shape = spectrum_shape.clone();
+    signal_shape[dim] = (spectrum_shape[dim] - 1) * 2;
 
     let (random_spectrum_re_handle, random_spectrum_re_data) = TestInput::new(
         client.clone(),
@@ -66,6 +63,7 @@ fn test_launch(
             random_spectrum_re_data,
             random_spectrum_im_data,
             signal_handle,
+            dim,
         )
         .as_test_outcome(),
         ExecutionOutcome::CompileError(e) => TestOutcome::CompileError(e),
@@ -78,28 +76,51 @@ fn assert_irfft_result(
     spectrum_re: HostData,
     spectrum_im: HostData,
     signal: TensorHandle<TestRuntime>,
+    dim: usize,
 ) -> ValidationResult {
     let epsilon = 0.01;
-    let expected_signal = irfft_ref(&spectrum_re, &spectrum_im);
+    let expected_signal = irfft_ref(&spectrum_re, &spectrum_im, dim);
     let actual_signal = HostData::from_tensor_handle(client, signal, HostDataType::F32);
 
     assert_equals_approx(&actual_signal, &expected_signal, epsilon)
 }
 
 #[test]
-fn stereo_100ms() {
+fn irfft_3d_last_axis() {
     let client = <TestRuntime as Runtime>::client(&Default::default());
-    let signal_shape = [5, 2, 2048].to_vec();
     let spectrum_shape = [5, 2, 1025].to_vec();
-    let dim = signal_shape.len() - 1;
-    test_launch(client, signal_shape, spectrum_shape, dim);
+    let dim = spectrum_shape.len() - 1;
+    test_launch(client, spectrum_shape, dim);
 }
 
 #[test]
-fn mono_500ms() {
+fn irfft_3d_axis_0() {
     let client = <TestRuntime as Runtime>::client(&Default::default());
-    let signal_shape = [22, 1, 2048].to_vec();
+    let spectrum_shape = [33, 2, 1024].to_vec();
+    let dim = 0;
+    test_launch(client, spectrum_shape, dim);
+}
+
+#[test]
+fn irfft_3d_axis_1() {
+    let client = <TestRuntime as Runtime>::client(&Default::default());
+    let spectrum_shape = [33, 5, 1024].to_vec();
+    let dim = 1;
+    test_launch(client, spectrum_shape, dim);
+}
+
+#[test]
+fn irfft_4d_axis_2() {
+    let client = <TestRuntime as Runtime>::client(&Default::default());
+    let spectrum_shape = [12, 8, 513, 4].to_vec();
+    let dim = 2;
+    test_launch(client, spectrum_shape, dim);
+}
+
+#[test]
+fn irfft_3d_batch_singleton_dim() {
+    let client = <TestRuntime as Runtime>::client(&Default::default());
     let spectrum_shape = [22, 1, 1025].to_vec();
-    let dim = signal_shape.len() - 1;
-    test_launch(client, signal_shape, spectrum_shape, dim);
+    let dim = spectrum_shape.len() - 1;
+    test_launch(client, spectrum_shape, dim);
 }
