@@ -11,7 +11,9 @@ use crate::{
         CubeDimResource,
         batch::{
             BatchMatmulFamily,
-            no_stage_vecmat::{NoStageVecMat, NoStageVecMatConfig, matmul_entry},
+            vecmat_unit_perpendicular::{
+                VecMatUnitPerpendicular, VecMatUnitPerpendicularConfig, matmul_entry,
+            },
         },
         global::memory::GlobalLayoutConfig,
         stage::NumStages,
@@ -24,9 +26,9 @@ use crate::{
 };
 
 /// Simple partitioned batch matmul family for any precision
-pub struct NoStageVecMatFamily {}
+pub struct VecMatUnitPerpendicularFamily {}
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct NoStageVecMatBlueprint {
+pub struct VecMatUnitPerpendicularBlueprint {
     pub dtypes: MatmulElems,
     pub num_planes: usize,
     // Should equal plane_dim * vector_size
@@ -34,7 +36,7 @@ pub struct NoStageVecMatBlueprint {
     pub hypercube_blueprint: HypercubeBlueprint,
 }
 
-impl Blueprint for NoStageVecMatBlueprint {
+impl Blueprint for VecMatUnitPerpendicularBlueprint {
     fn lhs_global_layout_config(&self) -> GlobalLayoutConfig {
         GlobalLayoutConfig {
             matrix_layout: MatrixLayout::RowMajor,
@@ -60,18 +62,18 @@ impl Blueprint for NoStageVecMatBlueprint {
     }
 
     fn tiling_scheme(&self) -> TilingScheme {
-        panic!("NoStageVecMat Blueprint doesn't have a TilingScheme")
+        panic!("VecMatUnitPerpendicular Blueprint doesn't have a TilingScheme")
     }
 
     fn swizzle_modes(&self) -> SwizzleModes {
-        panic!("NoStageVecMat Blueprint doesn't have Swizzle Modes")
+        panic!("VecMatUnitPerpendicular Blueprint doesn't have Swizzle Modes")
     }
 }
 
-impl BatchMatmulFamily<()> for NoStageVecMatFamily {
-    type Matmul<MP: MatmulTypes> = NoStageVecMat<MP>;
-    type Config = NoStageVecMatConfig;
-    type Blueprint = NoStageVecMatBlueprint;
+impl BatchMatmulFamily<()> for VecMatUnitPerpendicularFamily {
+    type Matmul<MP: MatmulTypes> = VecMatUnitPerpendicular<MP>;
+    type Config = VecMatUnitPerpendicularConfig;
+    type Blueprint = VecMatUnitPerpendicularBlueprint;
 
     fn expand_config(
         device_props: &DeviceProperties,
@@ -79,7 +81,7 @@ impl BatchMatmulFamily<()> for NoStageVecMatFamily {
         _dtypes: &MatmulElems,
         _vector_sizes: &MatmulVectorSizes,
     ) -> Result<Self::Config, MatmulSetupError> {
-        Ok(NoStageVecMatConfig {
+        Ok(VecMatUnitPerpendicularConfig {
             plane_dim: device_props.hardware.plane_size_max,
             num_planes: blueprint.num_planes as u32,
         })
@@ -98,7 +100,7 @@ impl BatchMatmulFamily<()> for NoStageVecMatFamily {
         output: OutputRuntimeArg<MA, R>,
         _config: ConfigRuntimeArg<MA, R>,
         cube_mapping: CubeMappingLaunch<R>,
-        blueprint: NoStageVecMatBlueprint,
+        blueprint: VecMatUnitPerpendicularBlueprint,
         dtypes: &MatmulElems,
         vector_sizes: &MatmulVectorSizes,
     ) -> Result<(), LaunchError> {
@@ -157,7 +159,7 @@ impl BatchMatmulFamily<()> for NoStageVecMatFamily {
         {
             return Err(MatmulSetupError::InvalidConfig(Box::new(format!(
                 "Problem dimensions n={:?} and k={:?} must be divisible by tile dim ({:?})",
-                problem.k, problem.n, blueprint.tile_dim,
+                problem.n, problem.k, blueprint.tile_dim,
             ))));
         }
 

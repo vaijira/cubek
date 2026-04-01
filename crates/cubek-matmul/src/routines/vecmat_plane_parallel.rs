@@ -8,28 +8,28 @@ use cubek_std::cube_count::{CubeCountPlan, CubeCountStrategy, GlobalOrder, Hyper
 use crate::{
     components::batch::{
         BatchMatmulFamily,
-        no_stage_vecmat::{NoStageVecMatBlueprint, NoStageVecMatFamily},
+        vecmat_plane_parallel::{VecMatPlaneParallelBlueprint, VecMatPlaneParallelFamily},
     },
     definition::{MatmulElems, MatmulProblem, MatmulSetupError},
     routines::{BlueprintStrategy, DeviceSettings, ExpandInfo, LaunchInfo, Routine},
 };
 
-pub struct NoStageVecMatRoutine {}
+pub struct VecMatPlaneParallelRoutine {}
 
 #[derive(Default, Clone)]
-pub struct NoStageVecMatStrategy {
+pub struct VecMatPlaneParallelStrategy {
     pub target_num_planes: usize,
 }
 
-impl Display for NoStageVecMatStrategy {
+impl Display for VecMatPlaneParallelStrategy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "_{}", self.target_num_planes)
     }
 }
 
-impl Routine<()> for NoStageVecMatRoutine {
-    type Strategy = NoStageVecMatStrategy;
-    type BatchMatmul = NoStageVecMatFamily;
+impl Routine<()> for VecMatPlaneParallelRoutine {
+    type Strategy = VecMatPlaneParallelStrategy;
+    type BatchMatmul = VecMatPlaneParallelFamily;
     type Blueprint = <Self::BatchMatmul as BatchMatmulFamily<()>>::Blueprint;
     type Config = <Self::BatchMatmul as BatchMatmulFamily<()>>::Config;
 
@@ -51,7 +51,7 @@ impl Routine<()> for NoStageVecMatRoutine {
                 let max_planes_for_swizzle = problem.k / tile_dim;
                 let num_planes = max(1, min(strategy.target_num_planes, max_planes_for_swizzle));
 
-                let blueprint = NoStageVecMatBlueprint {
+                let blueprint = VecMatPlaneParallelBlueprint {
                     dtypes: dtypes.clone(),
                     num_planes,
                     tile_dim,
@@ -88,7 +88,7 @@ impl Routine<()> for NoStageVecMatRoutine {
         )?
         .to_cube_dim(device_settings.plane_dim)?;
 
-        let working_planes = problem.n.div_ceil(blueprint.tile_dim);
+        let working_planes = problem.n;
         let working_cubes = working_planes.div_ceil(blueprint.num_planes);
 
         let cube_count_plan = CubeCountPlan::from_blueprint(

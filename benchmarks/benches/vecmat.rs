@@ -1,6 +1,7 @@
 use cubecl::{
     benchmark::{Benchmark, TimingMethod},
     frontend, future,
+    ir::MatrixLayout,
     prelude::*,
     std::tensor::TensorHandle,
 };
@@ -9,8 +10,9 @@ use cubek::{
         definition::MatmulElems,
         launch::{Strategy, launch_ref},
         routines::{
-            BlueprintStrategy, TileSizeSelection, nostage_vecmat::NoStageVecMatStrategy,
-            simple_unit::SimpleUnitSelectionArgs,
+            BlueprintStrategy, TileSizeSelection, simple_unit::SimpleUnitSelectionArgs,
+            vecmat_plane_parallel::VecMatPlaneParallelStrategy,
+            vecmat_unit_perpendicular::VecMatUnitPerpendicularStrategy,
         },
     },
     random::random_uniform,
@@ -26,6 +28,7 @@ struct VecMatBench<R: Runtime> {
     client: ComputeClient<R>,
     dtypes: MatmulElems,
     strategy: Strategy,
+    rhs_layout: MatrixLayout,
 }
 
 #[derive(Clone)]
@@ -45,12 +48,29 @@ impl<R: Runtime> Benchmark for VecMatBench<R> {
         let lhs = TensorHandle::empty(&client, [self.batches, 1, self.k], self.dtypes.lhs_global);
         random_uniform(&client, 0., 1., lhs.clone().binding(), lhs.dtype).unwrap();
 
-        let rhs = TensorHandle::empty(
-            &client,
-            [self.batches, self.k, self.n],
-            self.dtypes.rhs_global,
-        );
-        random_uniform(&client, 0., 1., rhs.clone().binding(), rhs.dtype).unwrap();
+        let rhs = match self.rhs_layout {
+            MatrixLayout::RowMajor => {
+                let rhs = TensorHandle::empty(
+                    &client,
+                    [self.batches, self.k, self.n],
+                    self.dtypes.rhs_global,
+                );
+                random_uniform(&client, 0., 1., rhs.clone().binding(), rhs.dtype).unwrap();
+                rhs
+            }
+            MatrixLayout::ColMajor => {
+                let mut rhs = TensorHandle::empty(
+                    &client,
+                    [self.batches, self.n, self.k],
+                    self.dtypes.rhs_global,
+                );
+                let len = rhs.metadata.rank();
+                rhs.metadata.strides_mut().swap(len - 2, len - 1);
+                rhs.metadata.shape_mut().swap(len - 2, len - 1);
+                rhs
+            }
+            MatrixLayout::Undefined => panic!(),
+        };
 
         let out = TensorHandle::empty(&client, [self.batches, 1, self.n], self.dtypes.acc_global);
 
@@ -82,29 +102,44 @@ impl<R: Runtime> Benchmark for VecMatBench<R> {
 fn run<R: Runtime, E: frontend::Float>(device: &R::Device, strategy: Strategy) {
     let client = R::client(device);
 
-    let bench = VecMatBench::<R> {
-        client: client.clone(),
-        batches: 2,
-        n: 4096,
-        k: 8192,
-        device: device.clone(),
-        dtypes: MatmulElems::from_single_dtype(E::as_type_native_unchecked()),
-        strategy,
-    };
-    match bench.run(TimingMethod::System) {
-        Ok(val) => {
-            println!("{val}");
+    for rhs_layout in [MatrixLayout::RowMajor, MatrixLayout::ColMajor] {
+        println!("{:?}: ", rhs_layout);
+
+        let bench = VecMatBench::<R> {
+            client: client.clone(),
+            batches: 2,
+            n: 4096,
+            k: 8192,
+            device: device.clone(),
+            dtypes: MatmulElems::from_single_dtype(E::as_type_native_unchecked()),
+            strategy: strategy.clone(),
+            rhs_layout,
+        };
+        match bench.run(TimingMethod::System) {
+            Ok(val) => {
+                println!("{val}");
+            }
+            Err(err) => println!("Can't run the benchmark: {err}"),
         }
-        Err(err) => println!("Can't run the benchmark: {err}"),
     }
 }
 
 #[allow(unused)]
 fn run_algos_vecmat<R: Runtime, E: frontend::Float>(device: &R::Device) {
-    println!("No Stage VecMat");
+    println!("VecMat Unit Perpendicular");
     run::<R, E>(
         device,
-        Strategy::NoStageVecMat(BlueprintStrategy::Inferred(NoStageVecMatStrategy {
+        Strategy::VecMatUnitPerpendicular(BlueprintStrategy::Inferred(
+            VecMatUnitPerpendicularStrategy {
+                target_num_planes: 8,
+            },
+        )),
+    );
+
+    println!("VecMat Plane Parallel");
+    run::<R, E>(
+        device,
+        Strategy::VecMatPlaneParallel(BlueprintStrategy::Inferred(VecMatPlaneParallelStrategy {
             target_num_planes: 8,
         })),
     );
