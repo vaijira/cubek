@@ -22,6 +22,6 @@ cubecl = { workspace = true }
 cubek-test-utils = { path = "./../cubek-test-utils/", version = "=0.2.0-pre.3" }
 
 [dev-dependencies]
-num-complex = { version = "*" }
+num-complex = "0.4.6"
 cubecl = { workspace = true, features = ["test-runtime"] }
 cubecl-common = { workspace = true }
