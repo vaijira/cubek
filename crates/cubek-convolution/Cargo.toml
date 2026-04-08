@@ -50,7 +50,7 @@ conv_tests_tma = []
 cubecl = { workspace = true, features = ["stdlib"] }
 cubecl-common = { workspace = true }
 cubek-matmul = { path = "../cubek-matmul", default-features = false, version = "=0.2.0-pre.3" }
-cubek-std = { path = "../cubek-std", default-features = false }
+cubek-std = { path = "../cubek-std", default-features = false, version = "=0.2.0-pre.3" }
 derive-new = { workspace = true }
 
 bytemuck = { workspace = true }
