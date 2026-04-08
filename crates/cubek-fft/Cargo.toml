@@ -1,6 +1,6 @@
 [package]
 authors = ["Sublime12", "louisfd"]
-categories = ["fft", "fourier-transform","mathematics", "algorithms"]
+categories = ["science","mathematics", "algorithms"]
 description = "CubeK: Fast Fourier Transform"
 edition.workspace = true
 keywords = []
