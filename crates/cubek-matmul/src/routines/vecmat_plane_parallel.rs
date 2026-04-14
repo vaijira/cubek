@@ -7,7 +7,7 @@ use cubek_std::cube_count::{CubeCountPlan, CubeCountStrategy, GlobalOrder, Hyper
 
 use crate::{
     components::batch::{
-        BatchMatmulFamily,
+        BatchMatmulFamily, CheckBounds,
         gemv_plane_parallel::{GemvKind, GemvPlaneParallelBlueprint, GemvPlaneParallelFamily},
     },
     definition::{MatmulElems, MatmulProblem, MatmulSetupError},
@@ -68,6 +68,18 @@ impl Routine<()> for GemvPlaneParallelRoutine {
                     }
                 };
 
+                let num_parallel_problems = match kind {
+                    GemvKind::VecMatColMajor => problem.n,
+                    GemvKind::VecMatRowMajor => problem.n / tile_dim,
+                    GemvKind::MatVecRowMajor => problem.m,
+                    GemvKind::MatVecColMajor => problem.m / tile_dim,
+                };
+                let check_bounds = if num_parallel_problems.is_multiple_of(num_planes) {
+                    CheckBounds::None
+                } else {
+                    CheckBounds::Terminate
+                };
+
                 let blueprint = GemvPlaneParallelBlueprint {
                     dtypes: dtypes.clone(),
                     num_planes,
@@ -77,6 +89,7 @@ impl Routine<()> for GemvPlaneParallelRoutine {
                         .global_order(GlobalOrder::RowMajor)
                         .build(),
                     kind,
+                    check_bounds,
                 };
 
                 Ok(ExpandInfo { blueprint, dtypes })
