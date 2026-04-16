@@ -65,7 +65,7 @@ impl GlobalFullUnitReduce {
         inst: &I,
         idle: ComptimeOption<bool>,
         #[comptime] vectorization_mode: VectorizationMode,
-    ) -> I::AccumulatorItem {
+    ) -> I::Accumulator {
         let reader = Reader::<P>::new::<I, Out>(
             input,
             output,

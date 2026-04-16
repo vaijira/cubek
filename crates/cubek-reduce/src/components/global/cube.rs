@@ -145,12 +145,12 @@ impl GlobalFullCubeReduce {
         let accumulator_plane = match blueprint.use_planes {
             true => {
                 // Sync at the plane level.
-                let (item, coordinate) = I::read_accumulator(inst, &accumulator);
+                let (item, coordinate) = I::split_accumulator(inst, &accumulator);
                 let mut accumulator_plane = I::null_accumulator(inst);
                 reduce_inplace::<P, I>(
                     inst,
                     &mut accumulator_plane,
-                    item,
+                    item.item(),
                     coordinate,
                     ReduceStep::Plane,
                 );
@@ -177,13 +177,13 @@ impl GlobalFullCubeReduce {
 fn reduce_scan<P: ReducePrecision, I: ReduceInstruction<P>>(
     inst: &I,
     accumulator: &mut I::SharedAccumulator,
-    result: &mut I::AccumulatorItem,
+    result: &mut I::Accumulator,
     #[comptime] size: usize,
 ) {
     for i in 0..size {
         let item = I::SharedAccumulator::read(accumulator, i);
-        let (item, coordinate) = I::read_accumulator(inst, &item);
-        reduce_inplace::<P, I>(inst, result, item, coordinate, ReduceStep::Identity);
+        let (item, coordinate) = I::split_accumulator(inst, &item);
+        reduce_inplace::<P, I>(inst, result, item.item(), coordinate, ReduceStep::Identity);
     }
 }
 
@@ -215,7 +215,7 @@ fn reduce_scan<P: ReducePrecision, I: ReduceInstruction<P>>(
 fn reduce_tree<P: ReducePrecision, I: ReduceInstruction<P>>(
     inst: &I,
     accumulator: &mut I::SharedAccumulator,
-    result: &mut I::AccumulatorItem,
+    result: &mut I::Accumulator,
     worker_index: usize,
     #[comptime] size: usize,
 ) {
@@ -249,6 +249,6 @@ fn reduce_tree<P: ReducePrecision, I: ReduceInstruction<P>>(
     sync_cube();
 
     let tmp = I::SharedAccumulator::read(accumulator, 0);
-    let (item, coordinate) = I::read_accumulator(inst, &tmp);
-    reduce_inplace::<P, I>(inst, result, item, coordinate, ReduceStep::Identity);
+    let (item, coordinate) = I::split_accumulator(inst, &tmp);
+    reduce_inplace::<P, I>(inst, result, item.item(), coordinate, ReduceStep::Identity);
 }
