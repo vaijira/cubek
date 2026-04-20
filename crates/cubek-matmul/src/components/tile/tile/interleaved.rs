@@ -4,21 +4,17 @@ use cubek_std::{MatrixLayout, tile::StridedTile};
 use crate::components::tile::{SharedTileConfig, TileConfig};
 use crate::definition::StageIdent;
 
-use super::{InterleavedTile, Tilex};
-
-// ===========================================================================
-// Allocate
-// ===========================================================================
+use super::{InterleavedTile, Tile};
 
 #[cube]
 pub fn interleaved_allocate_lhs<L: Numeric, VL: Size>(
     #[comptime] layout: MatrixLayout,
     #[comptime] config: SharedTileConfig,
-) -> Tilex<L, VL, ReadWrite> {
+) -> Tile<L, VL, ReadWrite> {
     let m = config.elements_in_tile_m();
     let k = config.elements_in_tile_k();
     let plane_dim = config.plane_dim();
-    Tilex::new_Interleaved(InterleavedTile::<L> {
+    Tile::new_Interleaved(InterleavedTile::<L> {
         data: Array::new((m * (k / plane_dim)) as usize),
         matrix_layout: layout,
         config,
@@ -29,11 +25,11 @@ pub fn interleaved_allocate_lhs<L: Numeric, VL: Size>(
 pub fn interleaved_allocate_rhs<R: Numeric, VR: Size>(
     #[comptime] layout: MatrixLayout,
     #[comptime] config: SharedTileConfig,
-) -> Tilex<R, VR, ReadWrite> {
+) -> Tile<R, VR, ReadWrite> {
     let n = config.elements_in_tile_n();
     let k = config.elements_in_tile_k();
     let plane_dim = config.plane_dim();
-    Tilex::new_Interleaved(InterleavedTile::<R> {
+    Tile::new_Interleaved(InterleavedTile::<R> {
         data: Array::new(((k / plane_dim) * n) as usize),
         matrix_layout: layout,
         config,
@@ -44,21 +40,15 @@ pub fn interleaved_allocate_rhs<R: Numeric, VR: Size>(
 pub fn interleaved_allocate_acc<A: Numeric, VA: Size>(
     #[comptime] layout: MatrixLayout,
     #[comptime] config: SharedTileConfig,
-) -> Tilex<A, VA, ReadWrite> {
+) -> Tile<A, VA, ReadWrite> {
     let m = config.elements_in_tile_m();
     let n = config.elements_in_tile_n();
-    Tilex::new_Interleaved(InterleavedTile::<A> {
+    Tile::new_Interleaved(InterleavedTile::<A> {
         data: Array::new((m * n) as usize),
         matrix_layout: layout,
         config,
     })
 }
-
-// ===========================================================================
-// Execute: (Interleaved, Interleaved, Interleaved)
-// Note: needs layouts from all three operands since lhs/rhs layouts affect
-// indexing during the multiply-accumulate.
-// ===========================================================================
 
 #[cube]
 pub fn interleaved_execute<L: Numeric, R: Numeric, A: Numeric>(
@@ -98,10 +88,6 @@ pub fn interleaved_execute<L: Numeric, R: Numeric, A: Numeric>(
         }
     }
 }
-
-// ===========================================================================
-// Load: SharedMemory -> Interleaved
-// ===========================================================================
 
 #[cube]
 pub fn interleaved_load_from_shared<E: Numeric, ES: Size, N: Numeric, V: Size>(
@@ -163,10 +149,6 @@ pub fn interleaved_load_from_shared<E: Numeric, ES: Size, N: Numeric, V: Size>(
     }
 }
 
-// ===========================================================================
-// Load: None -> Interleaved (zero fill)
-// ===========================================================================
-
 #[cube]
 pub fn interleaved_load_zeros<N: Numeric, V: Size>(
     arr: &mut Array<N>,
@@ -179,10 +161,6 @@ pub fn interleaved_load_zeros<N: Numeric, V: Size>(
         arr[i] = N::from_int(0);
     }
 }
-
-// ===========================================================================
-// Write: Interleaved -> SharedMemory
-// ===========================================================================
 
 #[cube]
 pub fn interleaved_write_to_shared<E: Numeric, ES: Size, A: Numeric, VA: Size>(
