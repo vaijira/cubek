@@ -4,16 +4,19 @@ use cubek_std::{
     tile::{Strided, StridedTile},
 };
 
-use crate::components::tile::cmma::{CmmaFragmentReader as _, CmmaStageReader, CmmaStageWriter};
+use crate::components::tile_matmul::cmma::{
+    CmmaFragmentReader as _, CmmaStageReader, CmmaStageWriter,
+};
+use crate::components::tile_matmul::tile::Scope;
 use crate::definition::StageIdent;
 
 use super::{CmmaTile, Tile};
 
 #[cube]
-pub fn cmma_allocate_lhs<L: Numeric, VL: Size>(
+pub fn cmma_allocate_lhs<L: Numeric, VL: Size, Sc: Scope>(
     #[comptime] layout: MatrixLayout,
     #[comptime] tile_size: TileSize,
-) -> Tile<L, VL, ReadWrite> {
+) -> Tile<L, VL, Sc, ReadWrite> {
     let fragment = unsafe {
         cmma::Matrix::<L>::uninitialized(
             cmma::MatrixIdent::A,
@@ -30,10 +33,10 @@ pub fn cmma_allocate_lhs<L: Numeric, VL: Size>(
 }
 
 #[cube]
-pub fn cmma_allocate_rhs<R: Numeric, VR: Size>(
+pub fn cmma_allocate_rhs<R: Numeric, VR: Size, Sc: Scope>(
     #[comptime] layout: MatrixLayout,
     #[comptime] tile_size: TileSize,
-) -> Tile<R, VR, ReadWrite> {
+) -> Tile<R, VR, Sc, ReadWrite> {
     let fragment = unsafe {
         cmma::Matrix::<R>::uninitialized(
             cmma::MatrixIdent::B,
@@ -50,10 +53,10 @@ pub fn cmma_allocate_rhs<R: Numeric, VR: Size>(
 }
 
 #[cube]
-pub fn cmma_allocate_acc<A: Numeric, VA: Size>(
+pub fn cmma_allocate_acc<A: Numeric, VA: Size, Sc: Scope>(
     #[comptime] layout: MatrixLayout,
     #[comptime] tile_size: TileSize,
-) -> Tile<A, VA, ReadWrite> {
+) -> Tile<A, VA, Sc, ReadWrite> {
     let fragment = unsafe {
         cmma::Matrix::<A>::uninitialized(
             cmma::MatrixIdent::Accumulator,
