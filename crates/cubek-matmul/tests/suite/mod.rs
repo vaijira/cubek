@@ -9,7 +9,7 @@ pub mod normal;
 mod launcher_strategy;
 mod reference;
 
-pub(crate) use launcher_strategy::{test_matmul_strategy, test_matmul_test_strategy};
+pub(crate) use launcher_strategy::test_matmul_strategy;
 
 pub(crate) use reference::assert_result;
 

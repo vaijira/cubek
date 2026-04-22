@@ -4,7 +4,6 @@ use cubek_matmul::{
     definition::{MatmulProblem, MatmulSetupError},
     launch::Strategy,
     launch::launch_ref,
-    launch::test_only::TestStrategy,
 };
 use cubek_std::{InputBinding, MatrixLayout};
 use cubek_test_utils::{DataKind, Distribution, ExecutionOutcome, TestInput, TestOutcome};
@@ -20,20 +19,6 @@ pub fn test_matmul_strategy(
 ) {
     run(client, problem, move |client, lhs, rhs, out, dtypes| {
         launch_ref(&strategy, client, lhs, rhs, out, dtypes)
-    });
-}
-
-/// Test the correctness of a [`TestStrategy`] (test-only routines) against
-/// the CPU reference. Kept separate from [`test_matmul_strategy`] so the
-/// public `Strategy` enum stays lean.
-#[allow(unused)]
-pub fn test_matmul_test_strategy(
-    client: ComputeClient<TestRuntime>,
-    problem: MatmulProblem,
-    strategy: TestStrategy,
-) {
-    run(client, problem, move |client, lhs, rhs, out, dtypes| {
-        strategy.launch_ref(client, lhs, rhs, out, dtypes)
     });
 }
 
@@ -89,9 +74,17 @@ where
 
     let mut dtypes = MatmulElems::from_globals(&problem.global_dtypes.clone());
 
-    match get_server_error(&client)
-        .unwrap_or(launch(&client, lhs_handle, rhs_handle, out_handle, &mut dtypes).into())
-    {
+    let launch_outcome: ExecutionOutcome = get_server_error(&client)
+        .unwrap_or(launch(&client, lhs_handle, rhs_handle, out_handle, &mut dtypes).into());
+
+    let outcome = match launch_outcome {
+        ExecutionOutcome::Executed => {
+            get_server_error(&client).unwrap_or(ExecutionOutcome::Executed)
+        }
+        other => other,
+    };
+
+    match outcome {
         ExecutionOutcome::Executed => {
             assert_result(&lhs_data, &rhs_data, &problem, &client, out, dtypes).as_test_outcome()
         }
