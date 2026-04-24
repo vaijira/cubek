@@ -6,6 +6,7 @@ pub mod extended;
 #[cfg(feature = "full")]
 pub mod full;
 
+mod bias;
 mod launcher_strategy;
 mod reference;
 
