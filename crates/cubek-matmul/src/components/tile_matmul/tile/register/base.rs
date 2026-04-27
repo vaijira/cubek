@@ -2,10 +2,10 @@ use cubecl::prelude::*;
 use cubek_std::{MatrixLayout, tile::StridedTile};
 
 use crate::components::tile_matmul::tile::Scope;
-use crate::components::tile_matmul::{ProductType, SharedTileConfig, TileConfig};
+use crate::components::tile_matmul::{
+    ProductType, RegisterTile, SharedTileConfig, Tile, TileConfig,
+};
 use crate::definition::StageIdent;
-
-use super::{RegisterTile, Tile};
 
 pub(crate) const UNROLL: bool = false;
 

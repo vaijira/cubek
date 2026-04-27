@@ -1,7 +1,7 @@
 //! Smoke tests for `SimpleSyncTilewiseConv`.
 
 use cubek_convolution::kernels::algorithm::simple::SimpleSyncTilewiseConv;
-use cubek_matmul::{components::tile_matmul::cmma::CmmaMatmul, definition::TilingScheme};
+use cubek_matmul::definition::TilingScheme;
 use cubek_std::PartitionSize;
 
 use super::common::{
@@ -21,7 +21,7 @@ fn simple_tilewise_cmma_small_f16() {
         .build()
         .unwrap();
 
-    test_algo::<SimpleSyncTilewiseConv<CmmaMatmul>>(
+    test_algo::<SimpleSyncTilewiseConv>(
         f16_dtypes(),
         tiling_scheme,
         default_swizzle(),

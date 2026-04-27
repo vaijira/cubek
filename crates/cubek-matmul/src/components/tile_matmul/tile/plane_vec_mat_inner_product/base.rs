@@ -4,10 +4,8 @@ use cubecl::prelude::*;
 use cubek_std::{MatrixLayout, tile::StridedTile};
 
 use crate::components::tile_matmul::tile::Scope;
-use crate::components::tile_matmul::{SharedTileConfig, TileConfig};
+use crate::components::tile_matmul::{NPlaneVec, PlaneVecTile, SharedTileConfig, Tile, TileConfig};
 use crate::definition::StageIdent;
-
-use super::{NPlaneVec, PlaneVecTile, Tile};
 
 // Binds the plane_vec_mat fragment's inner vector size (`NPlaneVec`) to the
 // `reduce_vector_size` chosen by the tile config at allocation time.

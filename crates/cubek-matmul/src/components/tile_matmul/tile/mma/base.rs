@@ -5,10 +5,10 @@ use cubek_std::{
     tile::{Filled, Strided, StridedTile},
 };
 
-use crate::components::tile_matmul::tile::Scope;
-use crate::components::tile_matmul::{SharedTileConfig, TileConfig};
-
-use super::{MmaAccTile, MmaLhsTile, MmaRhsTile, Tile};
+use crate::components::tile_matmul::{
+    MmaAccTile, MmaLhsTile, MmaRhsTile, SharedTileConfig, TileConfig,
+};
+use crate::components::tile_matmul::{Tile, tile::Scope};
 
 // Fragment inner vector sizes for the three MMA roles. Bound at allocation time
 // via `mma_register_vector_sizes` to match the hardware's `def.vector_size(...)`

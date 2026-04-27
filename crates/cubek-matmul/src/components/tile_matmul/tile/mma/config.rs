@@ -1,6 +1,6 @@
 use cubek_std::{stage::SwizzleMode, tile::mma::MmaIOConfig};
 
-use crate::components::tile_matmul::{SharedTileConfig, TileConfig, TileKind};
+use crate::components::tile_matmul::{SharedTileConfig, TileConfig};
 
 use crate::definition::StageIdent;
 
@@ -11,10 +11,6 @@ pub struct MmaMatmulConfig {
 }
 
 impl TileConfig for MmaMatmulConfig {
-    fn kind(&self) -> TileKind {
-        TileKind::Mma
-    }
-
     fn plane_dim(&self) -> u32 {
         self.shared.plane_dim()
     }

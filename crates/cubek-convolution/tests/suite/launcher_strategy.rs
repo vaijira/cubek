@@ -24,6 +24,7 @@ use cubek_matmul::{
     components::{
         global::{InputLoadFlow, LoadFlows},
         stage::PartitionBuffering,
+        tile_matmul::DispatchTileMatmul,
     },
     definition::{
         AvailableVectorSizes, MatmulElems, MatmulGlobalElems, SwizzleModes, TilingBlueprint,
@@ -129,10 +130,14 @@ pub fn test_algo<A: Algorithm<Routine: Routine<RuntimeArgs, Blueprint = TilingBl
         address_type: AddressType::U32,
     };
 
-    let mut blueprint =
-        TilingBlueprint::builder(tiling_scheme, plane_dim, &problem.as_matmul_problem())
-            .shared_swizzle(swizzle)
-            .partition_buffering(partition_buffering);
+    let mut blueprint = TilingBlueprint::builder(
+        DispatchTileMatmul::Cmma,
+        tiling_scheme,
+        plane_dim,
+        &problem.as_matmul_problem(),
+    )
+    .shared_swizzle(swizzle)
+    .partition_buffering(partition_buffering);
 
     if A::IS_SPECIALIZED {
         blueprint = blueprint.load_specialization_config(LoadFlows {

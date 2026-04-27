@@ -2,10 +2,17 @@ use cubecl::prelude::*;
 use cubek_std::{MatrixLayout, tile::StridedTile};
 
 use crate::components::tile_matmul::tile::Scope;
-use crate::components::tile_matmul::{SharedTileConfig, TileConfig};
+use crate::components::tile_matmul::{SharedTileConfig, Tile, TileConfig};
 use crate::definition::StageIdent;
 
-use super::{InterleavedTile, Tile};
+#[derive(CubeType)]
+pub struct InterleavedTile<N: Numeric> {
+    pub data: Array<N>,
+    #[cube(comptime)]
+    pub matrix_layout: MatrixLayout,
+    #[cube(comptime)]
+    pub config: SharedTileConfig,
+}
 
 #[cube]
 pub fn interleaved_allocate_lhs<L: Numeric, VL: Size, Sc: Scope>(

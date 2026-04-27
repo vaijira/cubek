@@ -1,6 +1,6 @@
 use cubek_std::{MatrixLayout, stage::SwizzleMode};
 
-use crate::components::tile_matmul::{ProductType, SharedTileConfig, TileConfig, TileKind};
+use crate::components::tile_matmul::{ProductType, SharedTileConfig, TileConfig};
 
 use crate::definition::StageIdent;
 
@@ -52,10 +52,6 @@ impl RegisterMatmulConfig {
 }
 
 impl TileConfig for RegisterMatmulConfig {
-    fn kind(&self) -> TileKind {
-        TileKind::Register
-    }
-
     fn plane_dim(&self) -> u32 {
         self.shared.plane_dim()
     }
