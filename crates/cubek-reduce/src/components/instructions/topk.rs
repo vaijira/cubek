@@ -4,6 +4,8 @@ use cubecl::frontend::CubeIndexMutExpand;
 use cubecl::prelude::*;
 
 use crate::components::instructions::AccumulatorFormat;
+use crate::components::instructions::plane_topk_insert;
+use crate::components::instructions::plane_topk_merge;
 use crate::components::instructions::{Accumulator, Item, Value};
 use crate::{
     ReduceFamily, ReduceInstruction, ReducePrecision,
@@ -29,7 +31,6 @@ pub struct TopkAccumulator<E: Scalar, S: Size> {
 }
 
 #[derive(CubeType)]
-/// Only to respect the type system. Shared Accumulator behaviour is not supported
 pub struct TopKSharedAccumulator<P: ReducePrecision> {
     elements: Sequence<SharedMemory<Vector<P::EA, P::SI>>>,
     #[cube(comptime)]
@@ -118,8 +119,11 @@ impl<P: ReducePrecision> ReduceInstruction<P> for TopK {
             ReduceStep::Plane => {
                 plane_topk_insert::<P::EA, P::SI>(
                     elements,
+                    &mut accumulator.args,
                     Vector::cast_from(item.elements),
+                    &item.args,
                     this.k,
+                    false,
                 );
             }
             ReduceStep::Identity => {
@@ -137,7 +141,12 @@ impl<P: ReducePrecision> ReduceInstruction<P> for TopK {
     }
 
     fn plane_reduce_inplace(this: &Self, accumulator: &mut Accumulator<P>) {
-        plane_topk_merge::<P::EA, P::SI>(this.k, accumulator.elements.multiple_mut());
+        plane_topk_merge(
+            accumulator.elements.multiple_mut(),
+            &mut accumulator.args,
+            this.k,
+            false,
+        );
     }
 
     fn fuse_accumulators(this: &Self, accumulator: &mut Accumulator<P>, other: &Accumulator<P>) {
@@ -208,78 +217,5 @@ impl<P: ReducePrecision> ReduceInstruction<P> for TopK {
         }
 
         Value::new_Multiple(output)
-    }
-}
-
-#[cube]
-pub fn plane_topk_insert<N: Numeric, S: Size>(
-    elements: &mut Array<Vector<N, S>>,
-    item: Vector<N, S>,
-    #[comptime] k: usize,
-) {
-    let mut local_best_val = item;
-    let unit_pos_x = Vector::new(UNIT_POS_X);
-
-    #[unroll]
-    for _i in 0..k {
-        let winning_val = plane_max(local_best_val);
-
-        let is_match = local_best_val.equal(winning_val);
-        let claim = select_many(is_match, unit_pos_x, Vector::new(u32::MAX));
-        let winning_lane = plane_min(claim);
-
-        // All threads in the warp insert the same value to stay in sync
-        let mut insert_item = winning_val;
-        for j in 0..k {
-            let acc_item = elements[j];
-            let keep = acc_item.greater_than(insert_item);
-
-            elements[j] = select_many(keep, acc_item, insert_item);
-            insert_item = select_many(keep, insert_item, acc_item);
-        }
-
-        // Mask out the winner, set its value to min
-        let is_winner_thread = unit_pos_x.equal(winning_lane);
-        local_best_val = select_many(
-            is_winner_thread,
-            Vector::new(N::min_value()),
-            local_best_val,
-        );
-    }
-}
-
-#[cube]
-pub fn plane_topk_merge<N: Numeric, S: Size>(
-    #[comptime] k: usize,
-    elements: &mut Array<Vector<N, S>>,
-) {
-    let mut final_elements = Array::new(k);
-
-    let mut cursor = Vector::new(0u32);
-    let lane_id = Vector::new(UNIT_POS_X);
-
-    for i in 0..k {
-        let mut local_best_val = Vector::new(N::min_value());
-        for j in 0..k {
-            let is_pointed_slot = cursor.equal(Vector::new(j as u32));
-            local_best_val = select_many(is_pointed_slot, elements[j], local_best_val);
-        }
-
-        // Find the global max value
-        let winning_val = plane_max(local_best_val);
-
-        // Find WHICH thread provided the winner.
-        let is_candidate = local_best_val.equal(winning_val);
-        let candidate_id = select_many(is_candidate, lane_id, Vector::new(u32::MAX));
-        let winning_lane_id = plane_min(candidate_id);
-
-        final_elements[i] = winning_val;
-
-        let is_winner_thread = lane_id.equal(winning_lane_id);
-        cursor = select_many(is_winner_thread, cursor + Vector::new(1u32), cursor);
-    }
-
-    for i in 0..k {
-        elements[i] = final_elements[i];
     }
 }

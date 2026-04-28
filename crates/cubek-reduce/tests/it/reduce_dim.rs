@@ -18,9 +18,13 @@ pub fn test_argmin() {
 }
 
 #[test]
-#[ignore = "ArgTopK not yet supported"]
-pub fn test_argtopk() {
+pub fn test_argtopk_3() {
     test_case().test_argtopk(3);
+}
+
+#[test]
+pub fn test_argtopk_5() {
+    test_case().test_argtopk(5);
 }
 
 #[test]

@@ -1,11 +1,11 @@
-use std::marker::PhantomData;
-
 use cubecl::comptime;
 use cubecl::cube;
 use cubecl::frontend::CubeIndexMutExpand;
 use cubecl::prelude::*;
 
 use crate::components::instructions::AccumulatorFormat;
+use crate::components::instructions::plane_topk_insert;
+use crate::components::instructions::plane_topk_merge;
 use crate::components::instructions::{Accumulator, Item, Value};
 use crate::{
     ReduceFamily, ReduceInstruction, ReducePrecision,
@@ -31,37 +31,63 @@ pub struct ArgTopkAccumulator<E: Scalar, S: Size> {
 }
 
 #[derive(CubeType)]
-/// Only to respect the type system. Shared Accumulator behaviour is not supported
-pub struct DummyArgTopkSharedAccumulator<A: CubeType + Send + Sync + 'static> {
+pub struct ArgTopKSharedAccumulator<P: ReducePrecision> {
+    elements: Sequence<SharedMemory<Vector<P::EA, P::SI>>>,
+    args: Sequence<SharedMemory<Vector<u32, P::SI>>>,
     #[cube(comptime)]
-    _phantom: PhantomData<A>,
+    k: usize,
 }
 
 #[cube]
-impl<A: CubeType + Send + Sync + 'static, P: ReducePrecision> SharedAccumulator<P, ArgTopK>
-    for DummyArgTopkSharedAccumulator<A>
-{
-    fn allocate(
-        #[comptime] _length: usize,
-        #[comptime] _coordinate: bool,
-        _inst: &ArgTopK,
-    ) -> Self {
-        unreachable!()
-        //DummyArgTopkSharedAccumulator {}
+impl<P: ReducePrecision> SharedAccumulator<P, ArgTopK> for ArgTopKSharedAccumulator<P> {
+    fn allocate(#[comptime] length: usize, #[comptime] _coordinate: bool, inst: &ArgTopK) -> Self {
+        let mut elements = Sequence::new();
+        let mut args = Sequence::new();
+        for _ in 0..inst.k {
+            elements.push(SharedMemory::new(length));
+            args.push(SharedMemory::new(length));
+        }
+        ArgTopKSharedAccumulator::<P> {
+            elements,
+            args,
+            k: inst.k,
+        }
     }
 
-    fn read(_accumulator: &Self, _index: usize) -> Accumulator<P> {
-        unreachable!()
+    fn read(accumulator: &Self, index: usize) -> Accumulator<P> {
+        let mut values = Array::new(accumulator.k);
+        let mut args = Array::new(accumulator.k);
+        #[unroll]
+        for i in 0..accumulator.k {
+            values[i] = accumulator.elements[i][index];
+            args[i] = accumulator.args[i][index];
+        }
+        Accumulator::<P> {
+            elements: Value::new_Multiple(values),
+            args: Value::new_Multiple(args),
+        }
     }
 
-    fn write(_accumulator: &mut Self, _index: usize, _item: Accumulator<P>) {
-        unreachable!()
+    fn write(accumulator: &mut Self, index: usize, item: Accumulator<P>) {
+        let values = item.elements.multiple();
+        let args = item.args.multiple();
+        #[unroll]
+        for i in 0..accumulator.k {
+            let values_acc = values[i];
+            let args_acc = args[i];
+
+            let mut shared_acc = accumulator.elements[i];
+            shared_acc[index] = values_acc;
+
+            let mut shared_arg_acc = accumulator.args[i];
+            shared_arg_acc[index] = args_acc;
+        }
     }
 }
 
 #[cube]
 impl<P: ReducePrecision> ReduceInstruction<P> for ArgTopK {
-    type SharedAccumulator = DummyArgTopkSharedAccumulator<Accumulator<P>>;
+    type SharedAccumulator = ArgTopKSharedAccumulator<P>;
     type Config = usize;
 
     fn requirements(_this: &Self) -> super::ReduceRequirements {
@@ -101,80 +127,77 @@ impl<P: ReducePrecision> ReduceInstruction<P> for ArgTopK {
         item: Item<P>,
         #[comptime] reduce_step: ReduceStep,
     ) {
-        let coordinate = item.args.item();
-        let item = item.elements;
-
-        let (candidate_item, candidate_coordinate) = match reduce_step {
-            ReduceStep::Plane => {
-                todo!()
-            }
-            ReduceStep::Identity => (item, coordinate),
-        };
-
         let elements = accumulator.elements.multiple_mut();
-        let args = accumulator.args.multiple_mut();
-        let mut item = Vector::cast_from(candidate_item);
-        let mut coordinate = candidate_coordinate;
 
-        #[unroll]
-        for k_iter in 0..this.k {
-            let current_item = elements[k_iter];
-            let current_coord = args[k_iter];
+        match reduce_step {
+            ReduceStep::Plane => {
+                plane_topk_insert::<P::EA, P::SI>(
+                    elements,
+                    &mut accumulator.args,
+                    Vector::cast_from(item.elements),
+                    &item.args,
+                    this.k,
+                    true,
+                );
+            }
+            ReduceStep::Identity => {
+                let coordinates = accumulator.args.multiple_mut();
+                let mut insert_val = Vector::cast_from(item.elements);
+                let mut insert_coord = item.args.item();
 
-            // keep "0" means items[0] wins the top slot
-            let keep0 = select_many(
-                current_item.equal(item),
-                current_coord.less_than(coordinate),
-                current_item.greater_than(item),
-            );
+                for j in 0..this.k {
+                    let to_keep = select_many(
+                        elements[j].equal(insert_val),
+                        coordinates[j].less_than(insert_coord),
+                        elements[j].greater_than(insert_val),
+                    );
+                    let best_value = select_many(to_keep, elements[j], insert_val);
+                    let loser_value = select_many(to_keep, insert_val, elements[j]);
+                    let best_coordinate = select_many(to_keep, coordinates[j], insert_coord);
+                    let loser_coordinate = select_many(to_keep, insert_coord, coordinates[j]);
 
-            let new_top_item = select_many(keep0, current_item, item);
-            let new_top_coord = select_many(keep0, current_coord, coordinate);
-            let new_rest_item = select_many(keep0, item, current_item);
-            let new_rest_coord = select_many(keep0, coordinate, current_coord);
-
-            elements[k_iter] = new_top_item;
-            args[k_iter] = new_top_coord;
-            item = new_rest_item;
-            coordinate = new_rest_coord;
-        }
+                    elements[j] = best_value;
+                    coordinates[j] = best_coordinate;
+                    insert_val = loser_value;
+                    insert_coord = loser_coordinate;
+                }
+            }
+        };
     }
 
-    fn plane_reduce_inplace(_this: &Self, _accumulator: &mut Accumulator<P>) {
-        todo!()
+    fn plane_reduce_inplace(this: &Self, accumulator: &mut Accumulator<P>) {
+        plane_topk_merge::<P::EA, P::SI>(
+            accumulator.elements.multiple_mut(),
+            &mut accumulator.args,
+            this.k,
+            true,
+        );
     }
 
     fn fuse_accumulators(this: &Self, accumulator: &mut Accumulator<P>, other: &Accumulator<P>) {
-        let acc_elements = accumulator.elements.multiple_mut();
-        let acc_args = accumulator.args.multiple_mut();
-
+        let elements = accumulator.elements.multiple_mut();
+        let coordinates = accumulator.args.multiple_mut();
         let other_elements = other.elements.multiple();
-        let other_args = other.args.multiple();
+        let other_coords = other.args.multiple();
 
         for i in 0..this.k {
-            let mut item = other_elements[i];
-            let mut coordinate = other_args[i];
-
+            let mut insert_val = other_elements[i];
+            let mut insert_coord = other_coords[i];
             for j in 0..this.k {
-                let current_item = acc_elements[j];
-                let current_coord = acc_args[j];
-
-                let keep0 = select_many(
-                    current_item.equal(item),
-                    current_coord.less_than(coordinate),
-                    current_item.greater_than(item),
+                let to_keep = select_many(
+                    elements[j].equal(insert_val),
+                    coordinates[j].less_than(insert_coord),
+                    elements[j].greater_than(insert_val),
                 );
+                let best_value = select_many(to_keep, elements[j], insert_val);
+                let best_coordinate = select_many(to_keep, coordinates[j], insert_coord);
+                let loser_value = select_many(to_keep, insert_val, elements[j]);
+                let loser_coordinate = select_many(to_keep, insert_coord, coordinates[j]);
 
-                let new_top_item = select_many(keep0, current_item, item);
-                let new_top_coord = select_many(keep0, current_coord, coordinate);
-                let new_rest_item = select_many(keep0, item, current_item);
-                let new_rest_coord = select_many(keep0, coordinate, current_coord);
-
-                acc_elements[j] = new_top_item;
-                acc_args[j] = new_top_coord;
-
-                item = new_rest_item;
-                coordinate = new_rest_coord;
+                elements[j] = best_value;
+                coordinates[j] = best_coordinate;
+                insert_val = loser_value;
+                insert_coord = loser_coordinate;
             }
         }
     }
@@ -184,42 +207,52 @@ impl<P: ReducePrecision> ReduceInstruction<P> for ArgTopK {
         accumulator: Accumulator<P>,
         _shape_axis_reduce: usize,
     ) -> Value<Out> {
-        let accumulators = accumulator.elements.multiple();
-        let args = accumulator.args.multiple();
-        let vector_size = accumulators[0].size().comptime();
+        let coords = accumulator.args.multiple();
+        let vals = accumulator.elements.multiple();
+        let vector_size = coords[0].size().comptime();
 
-        let mut topk = Array::new(this.k);
-        let mut topk_args = Array::new(this.k);
+        let mut topk_vals = Array::new(this.k);
+        let mut topk_coords = Array::new(this.k);
+
         #[unroll]
         for slot in 0..this.k {
-            topk[slot] = P::EA::min_value();
-            topk_args[slot] = Out::cast_from(u32::MAX);
+            topk_vals[slot] = P::EA::min_value();
+            topk_coords[slot] = u32::MAX;
         }
 
         #[unroll]
         for i in 0..this.k {
             #[unroll]
             for j in 0..vector_size {
-                let mut element = accumulators[i][j];
-                let mut coord = Out::cast_from(args[i][j]);
+                let mut value = vals[i][j];
+                let mut coordinate = coords[i][j];
 
                 #[unroll]
                 for slot in 0..this.k {
-                    let current = topk[slot];
-                    let current_coord = topk_args[slot];
+                    let current_value = topk_vals[slot];
+                    let current_coordinate = topk_coords[slot];
 
-                    // keep `current` in the slot if it wins (bigger, or equal with lower coord)
-                    let keep = select(current == element, current_coord < coord, current > element);
+                    let to_keep = select(
+                        current_value == value,
+                        current_coordinate < coordinate,
+                        current_value > value,
+                    );
 
-                    topk[slot] = select(keep, current, element);
-                    topk_args[slot] = select(keep, current_coord, coord);
-                    element = select(keep, element, current);
-                    coord = select(keep, coord, current_coord);
+                    topk_vals[slot] = select(to_keep, current_value, value);
+                    topk_coords[slot] = select(to_keep, current_coordinate, coordinate);
+
+                    value = select(to_keep, value, current_value);
+                    coordinate = select(to_keep, coordinate, current_coordinate);
                 }
             }
         }
 
-        Value::new_Multiple(topk_args)
+        let mut out = Array::new(this.k);
+        #[unroll]
+        for i in 0..this.k {
+            out[i] = Out::cast_from(topk_coords[i]);
+        }
+        Value::new_Multiple(out)
     }
 
     fn to_output_perpendicular<Out: Numeric>(

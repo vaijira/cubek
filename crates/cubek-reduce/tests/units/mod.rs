@@ -1,23 +1,22 @@
+use crate::it::reference::contiguous_strides;
 use cubecl::features::Plane;
+use cubecl::frontend::CompilationArg;
 use cubecl::frontend::CubePrimitive;
 use cubecl::{
     CubeCount, CubeDim, Runtime, TestRuntime, cube, ir::StorageType, prelude::*,
     std::tensor::TensorHandle, zspace::Shape,
 };
-use cubek_reduce::components::instructions::{plane_topk_insert, plane_topk_merge};
+use cubek_reduce::components::instructions::{Value, plane_topk_insert, plane_topk_merge};
 use cubek_test_utils::{InputDataType, StrideSpec, TestInput};
 
-use crate::it::reference::contiguous_strides;
-use cubecl::frontend::CompilationArg;
-
 #[test]
-fn test_plane_reduce_inplace() {
+fn test_topk_plane_reduce_inplace() {
     let client = TestRuntime::client(&Default::default());
     if !client.properties().features.plane.contains(Plane::Ops) {
         return;
     }
 
-    // plane_size of 16 with vector_size of 4
+    // plane_size of 2 with vector_size of 4
     let num_threads = 2;
     let k = 2;
     let vector_size = 4;
@@ -89,13 +88,13 @@ fn launch_plane_reduce_inplace<N: Numeric, S: Size>(
     let mut elements = Array::new(k);
     let offset = UNIT_POS_X as usize * k;
 
-    // Load backwards so the accumulator is already sorted descending locally
     #[unroll]
     for i in 0..k {
         elements[i] = input[offset + i];
     }
 
-    plane_topk_merge::<N, S>(k, &mut elements);
+    let mut args = Value::new_None();
+    plane_topk_merge::<N, S>(&mut elements, &mut args, k, false);
 
     #[unroll]
     for i in 0..k {
@@ -135,7 +134,7 @@ fn assert_plane_topk_custom_values(
 }
 
 #[test]
-fn test_plane_topk_insert() {
+fn test_topk_plane_topk_insert() {
     let client = TestRuntime::client(&Default::default());
     if !client.properties().features.plane.contains(Plane::Ops) {
         return;
@@ -217,8 +216,10 @@ fn launch_plane_topk_insert<N: Numeric, S: Size>(
     }
 
     let item = new_item[UNIT_POS_X as usize];
+    let args = Value::new_None();
+    let mut coordinates = Value::new_None();
 
-    plane_topk_insert::<N, S>(&mut elements, item, k);
+    plane_topk_insert::<N, S>(&mut elements, &mut coordinates, item, &args, k, false);
 
     #[unroll]
     for i in 0..k {
