@@ -6,13 +6,14 @@ use cubecl::{
 use cubek_matmul::components::stage::PartitionBuffering;
 
 use cubek_matmul::definition::{
-    MatmulAvailabilityError, MatmulElems, MatmulVectorSizes, SwizzleModes, TilingBlueprint,
-    TilingScheme, adjust_dtypes,
+    MatmulAvailabilityError, MatmulElems, MatmulVectorSizes, TilingBlueprint, TilingScheme,
+    adjust_dtypes,
 };
 use cubek_matmul::{
     components::tile_matmul::TileMatmulKind,
     routines::{NUM_SM_APPROX, NUM_TENSOR_CORES_APPROX, find_instruction_size},
 };
+use cubek_std::SwizzleModes;
 use cubek_std::stage::SwizzleMode;
 
 use crate::components::ConvolutionProblem;
