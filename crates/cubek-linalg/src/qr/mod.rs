@@ -1,9 +1,10 @@
 mod baht;
+mod baht_tsqr;
+mod base;
 mod cgr;
 mod error;
-mod base;
 mod solve;
 
-pub use error::*;
 pub use base::*;
+pub use error::*;
 pub use solve::*;

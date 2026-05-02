@@ -8,9 +8,9 @@ use cubecl::std::tensor::TensorHandle;
 // Fill vector l with the col_index from matrix r.
 #[cube(launch, launch_unchecked)]
 fn get_column_from_matrix<F: Float>(col_index: u32, r: &Tensor<F>, l: &mut Tensor<F>) {
-    let n_cols = r.shape(1);
+    let n_rows = r.shape(0);
     if ABSOLUTE_POS < l.len() {
-        l[ABSOLUTE_POS] = r[ABSOLUTE_POS * n_cols + col_index as usize]
+        l[ABSOLUTE_POS] = r[col_index as usize * n_rows + ABSOLUTE_POS]
     }
 }
 
@@ -59,19 +59,19 @@ fn qr_column_parallel<F: Float>(
             let (c, s) = givens_rotation::<F>(pivot_r, b);
             pivot_r = c * pivot_r + s * b;
 
-            // Update R
+            // Update R (Column-Major)
             if ABSOLUTE_POS < n_cols && ABSOLUTE_POS >= col_index as usize {
-                let row_col_val = r[col_index as usize * n_cols + ABSOLUTE_POS];
-                let row_k_val = r[k * n_cols + ABSOLUTE_POS];
-                r[col_index as usize * n_cols + ABSOLUTE_POS] = c * row_col_val + s * row_k_val;
-                r[k * n_cols + ABSOLUTE_POS] = -s * row_col_val + c * row_k_val;
+                let row_col_val = r[ABSOLUTE_POS * n_rows + col_index as usize];
+                let row_k_val = r[ABSOLUTE_POS * n_rows + k];
+                r[ABSOLUTE_POS * n_rows + col_index as usize] = c * row_col_val + s * row_k_val;
+                r[ABSOLUTE_POS * n_rows + k] = -s * row_col_val + c * row_k_val;
             }
 
-            // Update Q^T
-            let q_row_col_val = q[col_index as usize * q_rows + ABSOLUTE_POS];
-            let q_row_k_val = q[k * q_rows + ABSOLUTE_POS];
-            q[col_index as usize * q_rows + ABSOLUTE_POS] = c * q_row_col_val + s * q_row_k_val;
-            q[k * q_rows + ABSOLUTE_POS] = -s * q_row_col_val + c * q_row_k_val;
+            // Update Q^T (Column-Major)
+            let q_row_col_val = q[ABSOLUTE_POS * q_rows + col_index as usize];
+            let q_row_k_val = q[ABSOLUTE_POS * q_rows + k];
+            q[ABSOLUTE_POS * q_rows + col_index as usize] = c * q_row_col_val + s * q_row_k_val;
+            q[ABSOLUTE_POS * q_rows + k] = -s * q_row_col_val + c * q_row_k_val;
         }
     }
 }
